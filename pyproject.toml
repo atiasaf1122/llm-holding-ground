@@ -34,7 +34,10 @@ packages = ["src/council"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-q --strict-markers"
+# The `-m 'not gpu'` is the mechanism, not the marker's description: the card on
+# the development machine is busy, so the default invocation has to be the CPU
+# one. Opt in with `pytest -m gpu`.
+addopts = "-q --strict-markers -m 'not gpu'"
 markers = ["gpu: needs a free GPU and a pulled model; deselected by default"]
 
 [tool.coverage.run]
@@ -56,4 +59,6 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src/council"]
+# The tests are the deliverable of half this repo's work, so they are checked
+# too: a test whose fixture drifts out of shape passes by asserting nothing.
+files = ["src/council", "tests"]

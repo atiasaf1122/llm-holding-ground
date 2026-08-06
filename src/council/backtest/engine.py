@@ -51,7 +51,7 @@ class TickerResult:
 
     @property
     def net_return(self) -> np.ndarray:
-        return self.gross_return - self.cost
+        return np.asarray(self.gross_return - self.cost, dtype=float)
 
     @property
     def equity(self) -> np.ndarray:
@@ -60,7 +60,12 @@ class TickerResult:
 
     @property
     def turnover(self) -> float:
-        """Total absolute exposure traded, in units of capital."""
+        """Total absolute exposure traded, in units of capital.
+
+        Measured from a flat book, which is what the prepended zero is for: the
+        ramp into the opening position is a trade the engine charges for, so
+        omitting it would report a cost the turnover figure could not explain.
+        """
         return float(np.sum(np.abs(np.diff(self.position, prepend=0.0))))
 
 
@@ -92,6 +97,17 @@ def run_ticker(
 
     sessions = pd.DatetimeIndex(opens.index)
     prices = opens.to_numpy(dtype=float)
+
+    # This is where a calendar mismatch is caught, and the only place it can be.
+    # Two tickers on different calendars do not arrive as two date indexes -- a
+    # frame assembled from their series is unioned and the gaps filled with NaN --
+    # so by this point there is one shared index and nothing for a comparison of
+    # indexes to see. Left alone, a NaN open turns one period's return into NaN
+    # and the basket mean carries it to every later period, which reads as a
+    # missing curve rather than as a data error. A non-positive open is rejected
+    # for the same reason: it makes the period return infinite.
+    if not bool(np.isfinite(prices).all()) or bool((prices <= 0.0).any()):
+        raise ValueError(f"{ticker}: opens must be finite and positive on every session")
 
     # A decision made on session i can only be acted on at session i+1's open, so
     # reindexing onto the calendar and shifting by one is the entire lookahead
@@ -142,6 +158,12 @@ class BacktestResult:
 
     @property
     def turnover(self) -> float:
+        """Absolute exposure traded, averaged across the tickers in the basket.
+
+        A mean rather than a sum, so the figure is comparable between universes
+        of different sizes and against the per-ticker budget the random baseline
+        is calibrated to.
+        """
         return sum(result.turnover for result in self.per_ticker) / len(self.per_ticker)
 
     def to_frame(self) -> pd.DataFrame:
@@ -183,18 +205,13 @@ def run_backtest(
         for ticker in tickers
     )
 
-    # Every ticker shares one calendar, so the periods line up by construction.
-    # Asserting it is cheaper than debugging a silently misaligned basket.
-    reference = results[0].dates
-    for result in results[1:]:
-        if not result.dates.equals(reference):
-            raise ValueError(
-                f"{result.ticker} has a different trading calendar to {results[0].ticker}"
-            )
-
+    # No calendar check is needed here and one would be unreachable: a frame has a
+    # single index, `run_ticker` derives its dates from it, so every result carries
+    # the same ones. A ticker that genuinely trades on a different calendar reaches
+    # this frame as NaN in the unioned gaps and `run_ticker` rejects it there.
     stacked = np.vstack([result.net_return for result in results])
     return BacktestResult(
-        per_ticker=results, dates=reference, net_return=stacked.mean(axis=0)
+        per_ticker=results, dates=results[0].dates, net_return=stacked.mean(axis=0)
     )
 
 
