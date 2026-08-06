@@ -196,6 +196,17 @@ src/council/
   debate/        balanced compositions and the debate protocol
   backtest/      the fill rule, costs, metrics, and the random baseline
   evaluation/    dispersion, calibration, persuasion, influence, windows
+  probe/         the capitulation probe: known-answer items, no prices
+```
+
+The probe is a side study on the same machinery. It asks whether a model holds a
+position it is *known* to be right about when a peer contradicts it — the market
+cannot score that, because a correct argument can lose money on any given day. It
+runs on its own subcommand and writes its trials beside the other artefacts:
+
+```bash
+uv run python -m council probe --mock          # no daemon, no GPU
+uv run python -m council probe --model qwen3:8b
 ```
 
 ## Status

@@ -1,0 +1,444 @@
+"""``python -m council`` -- the six things a developer actually does.
+
+``plan`` costs a configuration without running it, ``generate`` sweeps the
+independent arm, ``debate`` runs the three treatment arms over the contested
+points, ``evaluate`` scores what is on disk, and ``dryrun`` does all four in that
+order on synthetic prices and the mock provider with no GPU at all. ``probe`` is
+the odd one out: it runs the capitulation probe, which shares the provider and the
+prompt conventions but touches no prices, no dates and no tickers.
+
+They are separate subcommands rather than flags on one because they are separated
+in time. Generation is an overnight job; evaluation is a question asked repeatedly
+the next morning. Each resumes from :class:`~council.agents.store.DecisionStore`,
+so running ``generate`` twice costs nothing and interrupting it costs one
+checkpoint.
+
+Exit codes are load-bearing: 0 only when the command did what it said. A run whose
+every generation failed exits 1, because a wrapper script that treats a night of
+unreachable-daemon rows as success is how an outage gets published as a result.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import logging
+import sys
+from collections.abc import Sequence
+from datetime import date
+from pathlib import Path
+from typing import Any, Final, TextIO
+
+import pandas as pd
+
+from council.agents.mock import MockProvider
+from council.agents.provider import Provider, ProviderError
+from council.agents.runner import ProviderFactory, ollama_factory, pin_device
+from council.config import Settings, get_settings
+from council.data.prices import write_prices
+from council.debate.sweep import run_debate_arms
+from council.evaluation.aggregation import RULES
+from council.pipeline import (
+    generate_independent,
+    load_or_synthesise_prices,
+    open_store,
+    select_contested,
+    stored_decisions,
+)
+from council.planning import SECONDS_PER_INFERENCE, plan_experiment
+from council.probe.render import render_probe
+from council.probe.session import probe_model
+from council.report import render_plan, render_results, results_as_json
+from council.scoring import DEFAULT_WINDOW_COUNT, PRIMARY_RULE, evaluate_experiment
+
+EXIT_OK: Final = 0
+EXIT_FAILURE: Final = 1
+
+RESULTS_FILENAME: Final = "results.json"
+
+LOG_LEVELS: Final[tuple[str, ...]] = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+DRYRUN_SUBDIR: Final = "dryrun"
+"""Where a dry run writes. Its own directory, because a mock decision and a real
+one are the same shape on disk, and a resumable store cannot tell them apart --
+one dry run into ``data/`` would silently satisfy the resume check for a night of
+real generation that then never happens."""
+
+DRYRUN_SESSIONS: Final = 90
+"""Business days a dry run covers unless told otherwise. Long enough to clear the
+warm-up and leave real decisions behind it, short enough to finish in seconds."""
+
+_LOG = logging.getLogger("council")
+
+
+# -- settings ---------------------------------------------------------------------
+
+
+def settings_from(args: argparse.Namespace) -> Settings:
+    """Apply the command-line overrides to the configured settings.
+
+    Rebuilt through the model rather than copied into it, so an override is
+    validated the same way an environment variable is: a duplicated ticker or a
+    negative lookback is refused here rather than three steps into a sweep.
+    """
+    overrides: dict[str, Any] = {}
+    if args.tickers:
+        overrides["tickers"] = tuple(args.tickers)
+    if args.models:
+        overrides["agent_models"] = tuple(args.models)
+    if args.start is not None:
+        overrides["start"] = args.start
+    if args.end is not None:
+        overrides["end"] = args.end
+    if args.device is not None:
+        overrides["cuda_visible_devices"] = args.device
+    if args.data_dir is not None:
+        overrides["data_dir"] = args.data_dir
+    return Settings(**{**get_settings().model_dump(), **overrides})
+
+
+def dryrun_settings(args: argparse.Namespace) -> Settings:
+    """The dry run's own configuration: a short calendar and a directory of its own.
+
+    Both are defaults rather than impositions -- an explicit ``--end`` or
+    ``--data-dir`` wins -- so the same command can be pointed at the full range
+    when the point is to time it.
+    """
+    settings = settings_from(args)
+    updates: dict[str, Any] = {}
+    if args.end is None:
+        calendar = pd.bdate_range(start=settings.start, periods=DRYRUN_SESSIONS)
+        updates["end"] = calendar[-1].date()
+    if args.data_dir is None:
+        updates["data_dir"] = settings.data_dir / DRYRUN_SUBDIR
+    return settings.model_copy(update=updates)
+
+
+def mock_factory(model: str) -> Provider:
+    """A provider that answers from a digest of the prompt. No daemon, no GPU."""
+    return MockProvider(model=model)
+
+
+def _factory(settings: Settings, *, mock: bool) -> ProviderFactory:
+    return mock_factory if mock else ollama_factory(settings)
+
+
+# -- subcommands ------------------------------------------------------------------
+
+
+def do_plan(args: argparse.Namespace, out: TextIO) -> int:
+    """Count the inferences a configuration implies. Issues none of them."""
+    settings = settings_from(args)
+    # No persistence: a command that promises to issue nothing should not leave a
+    # price file behind either.
+    prices = load_or_synthesise_prices(settings, synthetic=args.synthetic)
+    store = open_store(settings)
+    decisions = stored_decisions(store)
+    contested = (
+        tuple(point.point for point in select_contested(decisions, settings=settings))
+        if not decisions.empty
+        else None
+    )
+    plan = plan_experiment(
+        settings=settings,
+        prices=prices,
+        store=store,
+        contested=contested,
+        seconds_per_inference=args.seconds_per_inference,
+    )
+    print(render_plan(plan), file=out)
+    return EXIT_OK
+
+
+def do_generate(args: argparse.Namespace, out: TextIO) -> int:
+    """Run the independent arm, resuming whatever is already stored."""
+    settings = settings_from(args)
+    pin_device(settings.cuda_visible_devices)
+    prices = load_or_synthesise_prices(settings, synthetic=args.synthetic, persist=True)
+    report = asyncio.run(
+        generate_independent(
+            settings=settings,
+            prices=prices,
+            provider_factory=_factory(settings, mock=args.mock),
+            store=open_store(settings),
+        )
+    )
+    print(report.plan.describe(), file=out)
+    print(
+        f"generated {report.generated}, skipped {report.skipped}, failed {report.failures}",
+        file=out,
+    )
+    for model, failures in report.failures_by_model:
+        print(f"  {model}: {failures} failed", file=out)
+    return _generation_exit(report.generated, report.failures)
+
+
+def _generation_exit(generated: int, failures: int) -> int:
+    """A sweep in which nothing succeeded is a failure, not a result.
+
+    Individual failures are data -- the rate per model is published. A run where
+    *every* generation failed is an outage, and exiting 0 on it lets a wrapper
+    script move on to the debate arms over a control arm that is flat everywhere.
+    """
+    if generated > 0 and failures == generated:
+        _LOG.error("every generation failed; treating the run as an outage")
+        return EXIT_FAILURE
+    return EXIT_OK
+
+
+def do_debate(args: argparse.Namespace, out: TextIO) -> int:
+    """Run the three debate arms over the contested points."""
+    settings = settings_from(args)
+    pin_device(settings.cuda_visible_devices)
+    prices = load_or_synthesise_prices(settings, synthetic=args.synthetic, persist=True)
+    store = open_store(settings)
+    decisions = stored_decisions(store)
+    if decisions.empty:
+        raise ValueError("no decisions are stored; run `generate` before `debate`")
+
+    contested = select_contested(decisions, settings=settings)
+    print(f"{len(contested)} contested point(s) to debate", file=out)
+    report = asyncio.run(
+        run_debate_arms(
+            settings=settings,
+            prices=prices,
+            decisions=decisions,
+            contested=contested,
+            provider_factory=_factory(settings, mock=args.mock),
+            store=store,
+        )
+    )
+    print(
+        f"conversations {report.conversations}: held {report.held}, "
+        f"skipped {report.skipped}, abandoned {report.abandoned}",
+        file=out,
+    )
+    print(f"generated {report.generated} rows, {report.failures} failed", file=out)
+    return _generation_exit(report.generated, report.failures)
+
+
+def do_evaluate(args: argparse.Namespace, out: TextIO) -> int:
+    """Score stored decisions, write the results object, print the summary."""
+    settings = settings_from(args)
+    prices = load_or_synthesise_prices(settings, synthetic=args.synthetic, persist=True)
+    results = evaluate_experiment(
+        settings=settings,
+        prices=prices,
+        decisions=stored_decisions(open_store(settings)),
+        rule_name=args.rule,
+        window_count=args.windows,
+    )
+    target = args.out or settings.data_dir / RESULTS_FILENAME
+    write_results(results_as_json(results), target)
+    print(render_results(results), file=out)
+    print(f"\nwritten to {target}", file=out)
+    return EXIT_OK
+
+
+def do_probe(args: argparse.Namespace, out: TextIO) -> int:
+    """Put the capitulation corpus to one model and score what contradicting it did."""
+    settings = settings_from(args)
+    pin_device(settings.cuda_visible_devices)
+    run = asyncio.run(
+        probe_model(
+            settings=settings,
+            provider_factory=_factory(settings, mock=args.mock),
+            model=args.model,
+            target=args.out,
+        )
+    )
+    print(render_probe(run.report, model=run.model), file=out)
+    print(f"\nwritten to {run.archive}", file=out)
+    return _generation_exit(len(run.turns), run.failures)
+
+
+def do_dryrun(args: argparse.Namespace, out: TextIO) -> int:
+    """The whole pipeline, on synthetic prices and the mock provider.
+
+    All four stages in the order a developer runs them, ``plan`` included. It costs
+    nothing to issue and it is the stage most likely to break unnoticed -- nothing
+    downstream reads its output -- so leaving it out would mean the one command
+    whose job is to rehearse the pipeline left a quarter of it unexercised.
+
+    The synthesised prices are written out first. Nothing else persists them, so
+    this -- the only documented no-GPU path from nothing to a full set of results
+    -- otherwise finishes with ``prices.parquet`` absent, and the dashboard
+    reports that no run exists over a directory holding a complete one.
+    Persisting them also makes the dry run replayable from disk rather than only
+    from the seed.
+    """
+    settings = dryrun_settings(args)
+    written = write_prices(
+        load_or_synthesise_prices(settings, synthetic=True), settings.prices_path
+    )
+    print(f"synthetic prices written to {written}", file=out)
+    # `--seconds-per-inference` belongs to the plan subparser alone, so the dry run
+    # supplies the default the same way argparse would have.
+    plan_args = argparse.Namespace(
+        **{
+            **vars(args),
+            "synthetic": True,
+            "mock": True,
+            "seconds_per_inference": SECONDS_PER_INFERENCE,
+        }
+    )
+    for step in (do_plan, do_generate, do_debate):
+        code = step(_with(plan_args, settings), out)
+        if code != EXIT_OK:
+            return code
+    return do_evaluate(_with(plan_args, settings), out)
+
+
+def _with(args: argparse.Namespace, settings: Settings) -> argparse.Namespace:
+    """Freeze the dry run's resolved settings onto the namespace the steps read.
+
+    The steps rebuild settings from the namespace, so handing them the dry run's
+    short calendar and private directory has to happen through the same arguments
+    a user would have typed -- otherwise the dry run and a real run would take
+    different paths through :func:`settings_from`, and the dry run would stop
+    exercising the thing it is meant to rehearse.
+    """
+    return argparse.Namespace(
+        **{
+            **vars(args),
+            "tickers": list(settings.tickers),
+            "models": list(settings.agent_models),
+            "start": settings.start,
+            "end": settings.end,
+            "data_dir": settings.data_dir,
+        }
+    )
+
+
+def write_results(payload: dict[str, Any], target: Path) -> None:
+    """Write the published artefact as JSON every reader can parse.
+
+    Raises:
+        ValueError: if a non-finite float reached here.
+            :func:`~council.report.results_as_json` renders those as their names,
+            so one arriving as a float is a defect in that function rather than a
+            file to write: ``allow_nan`` would otherwise emit an ``Infinity`` token
+            no strict parser accepts, and the artefact would be readable only by
+            the language that wrote it.
+    """
+    # Sorted keys and an explicit newline, so two runs of one configuration produce
+    # byte-identical artefacts on any platform -- matching the completions archive.
+    # Rendered before the file is opened, so a refusal leaves no half-written one.
+    text = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text + "\n")
+
+
+# -- argument parsing -------------------------------------------------------------
+
+
+def _common() -> argparse.ArgumentParser:
+    """The overrides every subcommand accepts, in one place."""
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument("--tickers", nargs="+", metavar="SYMBOL", help="override the universe")
+    parent.add_argument("--models", nargs="+", metavar="TAG", help="override the base models")
+    parent.add_argument("--start", type=date.fromisoformat, metavar="YYYY-MM-DD")
+    parent.add_argument("--end", type=date.fromisoformat, metavar="YYYY-MM-DD")
+    parent.add_argument(
+        "--device",
+        metavar="INDEX",
+        help="CUDA_VISIBLE_DEVICES for this process; an already-running Ollama "
+        "daemon keeps the devices it was started with",
+    )
+    parent.add_argument("--data-dir", type=Path, metavar="PATH")
+    parent.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="use generated prices instead of the configured parquet",
+    )
+    # Constrained rather than free text: logging.basicConfig runs before the try
+    # block in main, so a typo here would raise a traceback instead of the one-line
+    # message that block exists to produce -- and a typo is the likeliest failure a
+    # user causes on this flag. `type` uppercases first, so `--log-level debug`
+    # still works.
+    parent.add_argument(
+        "--log-level", default="INFO", type=str.upper, choices=LOG_LEVELS, metavar="LEVEL"
+    )
+    return parent
+
+
+def _generating() -> argparse.ArgumentParser:
+    """The extra flag only the two commands that call a model accept.
+
+    Separate from :func:`_common` so that ``plan`` and ``evaluate`` do not offer a
+    backend switch they never read -- an accepted flag that does nothing is a flag
+    somebody will pass and believe.
+    """
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument(
+        "--mock", action="store_true", help="answer with the mock provider; no daemon, no GPU"
+    )
+    return parent
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="council", description="A controlled study of persuasion between language models."
+    )
+    common = _common()
+    generating = _generating()
+    subcommands = parser.add_subparsers(dest="command", required=True)
+
+    plan = subcommands.add_parser("plan", parents=[common], help="cost a configuration")
+    plan.add_argument("--seconds-per-inference", type=float, default=SECONDS_PER_INFERENCE)
+    plan.set_defaults(handler=do_plan)
+
+    subcommands.add_parser(
+        "generate", parents=[common, generating], help="run the independent arm"
+    ).set_defaults(handler=do_generate)
+
+    subcommands.add_parser(
+        "debate",
+        parents=[common, generating],
+        help="run the debate arms over contested points",
+    ).set_defaults(handler=do_debate)
+
+    probe = subcommands.add_parser(
+        "probe",
+        parents=[common, generating],
+        help="put the capitulation corpus to one model",
+    )
+    # One model per run: the report's headline is a property of a model, and the
+    # sweep's --models list would average two of them into a number about neither.
+    probe.add_argument(
+        "--model", metavar="TAG", help="which model to probe; defaults to the first configured"
+    )
+    probe.add_argument("--out", type=Path, metavar="PATH", help="where the trials archive goes")
+    probe.set_defaults(handler=do_probe)
+
+    for name, handler, description in (
+        ("evaluate", do_evaluate, "score stored decisions"),
+        ("dryrun", do_dryrun, "the whole pipeline on the mock provider"),
+    ):
+        command = subcommands.add_parser(name, parents=[common], help=description)
+        command.add_argument("--out", type=Path, metavar="PATH", help="where results.json goes")
+        command.add_argument("--rule", default=PRIMARY_RULE, choices=sorted(RULES))
+        command.add_argument("--windows", type=int, default=DEFAULT_WINDOW_COUNT)
+        command.set_defaults(handler=handler)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None, *, out: TextIO | None = None) -> int:
+    """Parse, dispatch, and turn an expected failure into a non-zero exit code.
+
+    Only the failures this project knows how to explain are caught. A defect in the
+    code should still print a traceback -- which also exits non-zero, so the
+    guarantee that a failure never exits 0 does not depend on this list being
+    complete.
+    """
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(level=args.log_level, format="%(levelname)s %(name)s: %(message)s")
+    stream = sys.stdout if out is None else out
+    try:
+        exit_code: int = args.handler(args, stream)
+    except (FileNotFoundError, ValueError, ProviderError) as failure:
+        _LOG.error("%s: %s", type(failure).__name__, failure)
+        return EXIT_FAILURE
+    return exit_code

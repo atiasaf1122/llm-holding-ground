@@ -22,7 +22,9 @@ dev = [
     "mypy>=1.13",
     "pandas-stubs>=2.2",
 ]
-app = ["streamlit>=1.40", "altair>=5.4"]
+# 1.49 is where `width=` replaced `use_container_width`, which the dashboard uses
+# and which the versions before it do not accept.
+app = ["streamlit>=1.49", "altair>=5.4"]
 
 [build-system]
 requires = ["hatchling"]

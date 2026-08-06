@@ -8,3 +8,4 @@ __pycache__/
 .coverage
 data/*.parquet
 data/*.jsonl
+data/

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from council.agents.provider import Completion, Provider
-from council.agents.schema import prepare_schema
+from council.agents.schema import UnsupportedSchemaError, prepare_schema
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +79,7 @@ class MockProvider:
             MockCall(system=system, user=user, schema=prepared, max_tokens=max_tokens)
         )
         if not self._responses:
-            return _mock_completion(_synthetic_signal(system, user), user=user)
+            return _mock_completion(_synthetic_reply(prepared, system, user), user=user)
         drawn = self._responses[(len(self.calls) - 1) % len(self._responses)]
         if isinstance(drawn, BaseException):
             raise drawn
@@ -110,8 +110,25 @@ def _mock_completion(data: dict[str, Any], *, user: str) -> Completion:
     )
 
 
-def _synthetic_signal(system: str, user: str) -> dict[str, Any]:
-    """A reproducible stand-in signal: the same prompt gives the same numbers.
+_DIGEST_BYTES = 4
+"""Enough entropy that two prompts do not collide across a dry run, and short
+enough that the digest reads in a rationale field."""
+
+_UNBOUNDED = (0.0, 1.0)
+"""What a number with no stated bounds is invented in. Every schema in this project
+states them; this is what keeps a schema that forgot from producing a NaN."""
+
+
+def _synthetic_reply(schema: Mapping[str, Any], system: str, user: str) -> dict[str, Any]:
+    """A reproducible stand-in answer, shaped by the schema it was handed.
+
+    Shaped by the schema rather than fixed to :class:`~council.domain.signal.Signal`
+    because the mock is the whole CPU-only promise, and a mock that can only emit an
+    exposure keeps that promise for one caller. :mod:`council.probe` asks for an
+    ``answer`` field; against a signal-shaped mock every probe turn failed
+    validation, so the protocol had no no-GPU path at all and only scripted replies
+    ever exercised it. Deriving the fields from the schema means a caller that adds
+    one gets an answer rather than a malformed turn.
 
     Derived from a digest of the prompt rather than from a call counter, so a
     test that runs its calls concurrently still gets a stable answer for each.
@@ -125,14 +142,43 @@ def _synthetic_signal(system: str, user: str) -> dict[str, Any]:
     Length-prefixed, the way :func:`council.agents.prompt.prompt_hash` does it, so
     a sentence sliding from one turn into the other changes the answer rather than
     leaving it identical.
+
+    Raises:
+        UnsupportedSchemaError: if the schema is not an object with properties, or
+            names a type the mock cannot invent a value for. A real daemon would
+            answer something unusable here; failing by name is cheaper to read.
     """
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping):
+        raise UnsupportedSchemaError("the mock answers object schemas with properties")
     framed = f"{len(system)}\0{system}\0{user}"
-    digest = hashlib.blake2b(framed.encode("utf-8"), digest_size=4).digest()
+    digest = hashlib.blake2b(framed.encode("utf-8"), digest_size=_DIGEST_BYTES).digest()
     return {
-        "exposure": round(digest[0] / 127.5 - 1.0, 3),
-        "confidence": round(digest[1] / 255.0, 3),
-        "rationale": f"mock rationale {digest.hex()}",
+        str(name): _synthetic_value(str(name), spec, digest=digest, index=index)
+        for index, (name, spec) in enumerate(properties.items())
     }
+
+
+def _synthetic_value(name: str, spec: Any, *, digest: bytes, index: int) -> Any:
+    """One field's stand-in, inside whatever bounds the schema states.
+
+    The bounds are read rather than assumed: an ``exposure`` invented outside
+    [-1, 1] would be rejected by the very model the caller is about to validate
+    with, and a CPU test would then be exercising the failure path it thought it
+    was avoiding. Strings are cut to ``maxLength`` for the same reason.
+    """
+    if not isinstance(spec, Mapping):
+        raise UnsupportedSchemaError(f"{name} is not a schema object")
+    kind = spec.get("type")
+    if kind == "string":
+        limit = spec.get("maxLength")
+        text = f"mock {name} {digest.hex()}"
+        return text[:limit] if isinstance(limit, int) else text
+    if kind in {"number", "integer"}:
+        low, high = spec.get("minimum", _UNBOUNDED[0]), spec.get("maximum", _UNBOUNDED[1])
+        scaled = float(low) + (digest[index % len(digest)] / 255.0) * (float(high) - float(low))
+        return int(scaled) if kind == "integer" else round(scaled, 3)
+    raise UnsupportedSchemaError(f"the mock cannot invent a {kind!r} value for {name!r}")
 
 
 if TYPE_CHECKING:

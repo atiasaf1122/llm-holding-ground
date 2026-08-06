@@ -163,6 +163,23 @@ def load_prices(path: Path) -> pd.DataFrame:
     return validate_prices(pd.read_parquet(path))
 
 
+def write_prices(prices: pd.DataFrame, path: Path) -> Path:
+    """Validate a price table and write it where :func:`load_prices` will find it.
+
+    Validated on the way out rather than only on the way in. A frame assembled in
+    memory -- the dry run's generated one, say -- has never been through the
+    boundary, and writing it unchecked would move the failure to whoever loads it
+    next, with no record of which step produced it.
+
+    Returns:
+        The path written, so a caller can name it in its output.
+    """
+    validated = validate_prices(prices)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    validated.to_parquet(path, index=False)
+    return path
+
+
 def _raise_calendar_mismatch(
     reference_ticker: str,
     reference: pd.DatetimeIndex,
