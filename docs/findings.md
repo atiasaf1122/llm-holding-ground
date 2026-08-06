@@ -172,6 +172,109 @@ After it, over the six-month slice:
 
 ---
 
+## 4. The main experiment
+
+14,496 decisions. Two models, four personas, eight committees, 3,344 debates, zero
+generation failures. Six months of synthetic prices, temperature 0.
+
+**Read the returns as noise.** These are geometric random walks; there is nothing in
+them to forecast, so every arm losing to buy-and-hold is arithmetic, not a finding.
+**The behavioural columns do not depend on the prices being real** -- whether an
+agent moves after reading a peer is answered by comparing arms, and the price series
+never enters that comparison. That is the result below.
+
+### Shift rate, by the confidence held before seeing any peer
+
+| prior confidence | debate | **placebo** | rationale only |
+|---|---|---|---|
+| 0.20 – 0.40 | 0.204 (162) | **0.195** (159) | 0.287 (164) |
+| 0.40 – 0.60 | 0.241 (365) | **0.248** (359) | 0.171 (368) |
+| 0.60 – 0.80 | 0.218 (1590) | **0.215** (1567) | 0.183 (1586) |
+| 0.80 – 1.00 | 0.228 (123) | **0.236** (123) | 0.148 (122) |
+
+### Finding 1 — it is compliance, not persuasion
+
+**Debate and placebo are indistinguishable.** The two columns sit within one
+percentage point of each other in three of four buckets, and in two of the four the
+*placebo* moved agents more. In the placebo arm the peers argue -- fluently,
+specifically, at the same length -- **about a different day entirely.**
+
+Agents shift about one time in five, and they do it just as readily when the
+counter-argument has nothing to do with what they are deciding. What moves them is
+**being contradicted**, not what the contradiction says.
+
+**Without this arm, the number to report would have been "a 22% shift rate under
+debate", and it would have been called persuasion.** There would have been no way to
+know otherwise. This is the entire justification for the control.
+
+### Finding 2 — confidence does not protect a position
+
+Down the debate column: **0.204, 0.241, 0.218, 0.228.** Flat. An agent that reported
+30% confidence and one that reported 90% abandon their positions at the same rate.
+
+That answers half of the question this project opened with -- *the majority, or the
+confident minority?* **Self-reported confidence carries no information about who
+will hold.** There is no case for listening to the confident dissenter, because the
+confidence does not predict anything.
+
+### Finding 3 — the number is what destroys the confidence signal
+
+This one was not anticipated, and it is why the rationale-only arm exists.
+
+Strip the peers' *exposure numbers* and show only their reasoning, and the flat line
+tilts:
+
+```
+debate           0.204  0.241  0.218  0.228     flat
+rationale only   0.287  0.171  0.183  0.148     falling
+```
+
+**With numbers on the page, confidence stops mattering. Without them, the confident
+hold and the unsure move.** The least-confident agents shift *more* than in a full
+debate (0.287 against 0.204) and the most-confident shift far *less* (0.148 against
+0.228).
+
+So the agents are not incapable of weighing their own certainty. **A peer's number
+overrides it** -- they converge toward a figure rather than toward an argument, and
+that anchoring is what flattens the relationship a rational agent would have.
+
+### Finding 4 — the influence matrix is not measuring persuasiveness
+
+Net concessions won:
+
+| arm | |
+|---|---|
+| debate | gemma4 **+20** |
+| placebo | gemma4 **+21** |
+| rationale only | gemma4 **+49** |
+
+If gemma4 argued more convincingly, its advantage should collapse when its arguments
+are irrelevant. **It does not move at all** (+20 against +21). What the matrix
+actually measures is that **qwen3 is the more yielding model**, whatever is said to
+it.
+
+The rationale-only figure being 2.4x larger says the asymmetry is *wider* without
+numbers -- consistent with Finding 3, where the number pulls everyone toward a
+midpoint and so compresses the difference between a firm model and a soft one.
+
+### And the reversal against the probe
+
+On the factual probe, **qwen3 held better** than gemma4. In the market arms,
+**qwen3 yields more.** Same two models, opposite ordering.
+
+That is the fact-versus-judgement distinction, observed rather than argued:
+**defending a verifiable answer and defending an opinion are not the same
+behaviour**, and a benchmark that measures the first predicts the second poorly.
+
+### What would strengthen this
+
+Two models is two models. The result is consistent across four confidence buckets,
+three arms and 3,344 conversations, but "language models comply rather than
+persuade" is a claim about language models, and two of them cannot carry it. Four
+families from four labs is the obvious next step and costs one more run.
+
+---
+
 ## Still open
 
 - The market arms themselves: does debate move the committee, and in which
