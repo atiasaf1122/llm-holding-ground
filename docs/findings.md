@@ -172,7 +172,81 @@ After it, over the six-month slice:
 
 ---
 
-## 4. The main experiment
+## 4. Choosing the four models — and a check that was wrong the first time
+
+The first run used two models. "Language models comply rather than persuade" is a
+claim about language models, and two cannot carry it, so the committee was widened
+to four labs of comparable size:
+
+| lab | model | size |
+|---|---|---|
+| Alibaba | `qwen3.5:9b` | 6.6 GB |
+| IBM | `granite4.1:8b` | 5.3 GB |
+| Microsoft | `phi4:14b` | 9.1 GB |
+| Google | `gemma4:12b` | 7.6 GB |
+
+**Comparable size is not a detail.** With an 8B beside a 30B, a "model effect" is
+partly a size effect and the axis stops meaning what it claims. And the diversity
+that should matter here is **alignment**, not architecture: capitulation is far more
+plausibly a product of the instruction-tuning stage than of the transformer. Granite
+is tuned for enterprise use rather than for being agreeable, and Phi is trained
+largely on synthetic text rather than scraped argument -- if yielding is learned
+from human social dynamics in the training data, those two should differ.
+
+### The check that was wrong
+
+Each model was screened on four questions before committing GPU time: does it honour
+the schema, does it fit on one card, does its confidence vary, and do the personas
+actually move it.
+
+The fourth was measured as *momentum's mean exposure minus reversion's*, expected to
+be positive. **That is only right on a rising series.** On a falling one, a momentum
+reader shorts and a reversion reader buys the dip, so the sign flips and a perfectly
+working model reads as broken. The first pass duly reported that two of the four
+models had no stance separation, and one had it backwards.
+
+Rerun with the separation *oriented by the trend the agents were shown* -- momentum
+should agree with the recent move, reversion should oppose it -- on the two
+strongest up-drifts and the two strongest down-drifts in the series:
+
+| model | mean separation | falling, falling | rising, rising | confidence values |
+|---|---|---|---|---|
+| gemma4:12b | +0.681 | +0.30, +0.15 | +1.12, +1.15 | 7 |
+| qwen3.5:9b | +0.596 | +0.03, -0.00 | +1.16, +1.20 | 5 |
+| granite4.1:8b | +0.565 | +0.03, +0.05 | +1.06, +1.12 | 8 |
+| phi4:14b | +0.463 | **-0.20, -0.15** | +1.10, +1.10 | **3** |
+
+All four honoured the schema on every call, and all four sat entirely in GPU memory.
+The aggression axis worked for every model without exception (bold 0.69–0.81 against
+cautious 0.19–0.39 in absolute exposure).
+
+### What the corrected check actually found
+
+**Every model separates strongly on a rising series and barely at all on a falling
+one.** On a -19% drift the stance axis is worth roughly 0.03 to 0.30; on a +22%
+drift it is worth 1.06 to 1.20 -- forty times more in the extreme case.
+
+The reading is that **none of these models will go long into a drawdown**, whatever
+persona it is wearing. A reversion reader is supposed to buy a 19% fall; they will
+not. They will chase a rise but they will not catch a falling knife.
+
+That is a limitation of the study, not a bug in the harness: **disagreement, and
+therefore everything measured here, is concentrated in rising markets.** A period
+that fell throughout would produce far less of it.
+
+### phi4 is kept despite being the weakest
+
+Three distinct confidence values across 16 calls, and a stance separation that runs
+*backwards* on falling series. It is the weakest of the four on this screen.
+
+It stays in. **Dropping a model because it behaves unlike the others is the same
+error as tuning until the result is good** -- it selects the sample to fit the
+conclusion. Its oddity is a datum, and if the headline finding holds for three
+models but not for phi4, that is more interesting than a clean sweep.
+
+---
+
+## 5. The main experiment
 
 14,496 decisions. Two models, four personas, eight committees, 3,344 debates, zero
 generation failures. Six months of synthetic prices, temperature 0.
@@ -275,7 +349,7 @@ families from four labs is the obvious next step and costs one more run.
 
 ---
 
-## Still open
+## Still open (as of the two-model run)
 
 - The market arms themselves: does debate move the committee, and in which
   direction. Running.

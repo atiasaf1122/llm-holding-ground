@@ -1,0 +1,694 @@
+{
+  "aggregation_rule": "mean",
+  "arms": [
+    {
+      "arm": "independent",
+      "baseline": {
+        "cagr": -0.01987421523608013,
+        "hit_rate": 0.4603174603174603,
+        "max_drawdown": 0.010626248986408071,
+        "periods": 128,
+        "sharpe": -1.9041128513436754,
+        "sortino": -2.3847149257681335,
+        "time_in_market": 0.97265625,
+        "total_return": -0.01014469413207364,
+        "turnover": 4.4625,
+        "turnover_per_period": 0.03486328125
+      },
+      "metrics": {
+        "cagr": -0.018927600817465584,
+        "hit_rate": 0.47058823529411764,
+        "max_drawdown": 0.017120491932868798,
+        "periods": 128,
+        "sharpe": -1.1101382035586445,
+        "sortino": -1.3021582826740743,
+        "time_in_market": 0.52734375,
+        "total_return": -0.009659216432651552,
+        "turnover": 4.35,
+        "turnover_per_period": 0.033984375
+      },
+      "point_count": 140
+    },
+    {
+      "arm": "debate",
+      "baseline": {
+        "cagr": -0.00754138260486692,
+        "hit_rate": 0.4603174603174603,
+        "max_drawdown": 0.006683609602979423,
+        "periods": 128,
+        "sharpe": -0.8783996506492314,
+        "sortino": -1.2124122873779934,
+        "time_in_market": 0.9609375,
+        "total_return": -0.00383767759405218,
+        "turnover": 3.978125,
+        "turnover_per_period": 0.0310791015625
+      },
+      "metrics": {
+        "cagr": -0.016083615876051893,
+        "hit_rate": 0.4411764705882353,
+        "max_drawdown": 0.010650652429190277,
+        "periods": 128,
+        "sharpe": -1.559789084179631,
+        "sortino": -2.007214632423832,
+        "time_in_market": 0.51171875,
+        "total_return": -0.008202044087775362,
+        "turnover": 3.9015625000000003,
+        "turnover_per_period": 0.030480957031250002
+      },
+      "point_count": 140
+    },
+    {
+      "arm": "debate_rationale_only",
+      "baseline": {
+        "cagr": 0.00044852390180771806,
+        "hit_rate": 0.44881889763779526,
+        "max_drawdown": 0.007095015628398205,
+        "periods": 128,
+        "sharpe": 0.04438057471898488,
+        "sortino": 0.06599185730073384,
+        "time_in_market": 0.96484375,
+        "total_return": 0.00022779652964133312,
+        "turnover": 4.754687499999999,
+        "turnover_per_period": 0.037145996093749994
+      },
+      "metrics": {
+        "cagr": -0.03818672129405698,
+        "hit_rate": 0.3382352941176471,
+        "max_drawdown": 0.02300585569017466,
+        "periods": 128,
+        "sharpe": -3.464429560903114,
+        "sortino": -4.0282688768213255,
+        "time_in_market": 0.53125,
+        "total_return": -0.019582207767233295,
+        "turnover": 4.784375,
+        "turnover_per_period": 0.0373779296875
+      },
+      "point_count": 140
+    },
+    {
+      "arm": "debate_placebo",
+      "baseline": {
+        "cagr": -0.011691750466963136,
+        "hit_rate": 0.4881889763779528,
+        "max_drawdown": 0.00883492594654367,
+        "periods": 128,
+        "sharpe": -1.0721308491384158,
+        "sortino": -1.4763268241517042,
+        "time_in_market": 0.96875,
+        "total_return": -0.0059558497925396026,
+        "turnover": 4.2484375,
+        "turnover_per_period": 0.03319091796875
+      },
+      "metrics": {
+        "cagr": -0.002092288551773014,
+        "hit_rate": 0.4411764705882353,
+        "max_drawdown": 0.006461230195913714,
+        "periods": 128,
+        "sharpe": -0.197611986839568,
+        "sortino": -0.2949600531970351,
+        "time_in_market": 0.51953125,
+        "total_return": -0.0010632973816656621,
+        "turnover": 4.2828125,
+        "turnover_per_period": 0.03345947265625
+      },
+      "point_count": 140
+    }
+  ],
+  "buy_and_hold": {
+    "cagr": 0.20485665536444575,
+    "hit_rate": 0.5196850393700787,
+    "max_drawdown": 0.05849172267135583,
+    "periods": 128,
+    "sharpe": 1.4096472494894676,
+    "sortino": 2.171848230909557,
+    "time_in_market": 0.9921875,
+    "total_return": 0.09928432367916673,
+    "turnover": 1.0,
+    "turnover_per_period": 0.0078125
+  },
+  "calibration": {
+    "debate": {
+      "buckets": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 155,
+          "hit_count": 80,
+          "hit_rate": 0.5161290322580645
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 132,
+          "hit_count": 63,
+          "hit_rate": 0.4772727272727273
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1507,
+          "hit_count": 734,
+          "hit_rate": 0.4870603848706038
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 188,
+          "hit_count": 92,
+          "hit_rate": 0.48936170212765956
+        }
+      ],
+      "correlation": -0.010171239647036954,
+      "hit_rate": 0.48890010090817354,
+      "scored_count": 1982,
+      "skipped_count": 258
+    },
+    "debate_placebo": {
+      "buckets": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 146,
+          "hit_count": 70,
+          "hit_rate": 0.4794520547945205
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 124,
+          "hit_count": 61,
+          "hit_rate": 0.49193548387096775
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1525,
+          "hit_count": 755,
+          "hit_rate": 0.49508196721311476
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 144,
+          "hit_count": 68,
+          "hit_rate": 0.4722222222222222
+        }
+      ],
+      "correlation": 0.015700635132912942,
+      "hit_rate": 0.4920061887570913,
+      "scored_count": 1939,
+      "skipped_count": 269
+    },
+    "debate_rationale_only": {
+      "buckets": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 119,
+          "hit_count": 51,
+          "hit_rate": 0.42857142857142855
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 264,
+          "hit_count": 141,
+          "hit_rate": 0.5340909090909091
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1514,
+          "hit_count": 729,
+          "hit_rate": 0.4815059445178336
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 160,
+          "hit_count": 71,
+          "hit_rate": 0.44375
+        }
+      ],
+      "correlation": -0.01172147846976165,
+      "hit_rate": 0.4822557122022363,
+      "scored_count": 2057,
+      "skipped_count": 183
+    },
+    "independent": {
+      "buckets": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 18,
+          "hit_count": 12,
+          "hit_rate": 0.6666666666666666
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 162,
+          "hit_count": 82,
+          "hit_rate": 0.5061728395061729
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 776,
+          "hit_count": 380,
+          "hit_rate": 0.4896907216494845
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 59,
+          "hit_count": 30,
+          "hit_rate": 0.5084745762711864
+        }
+      ],
+      "correlation": -0.02240524764465143,
+      "hit_rate": 0.496551724137931,
+      "scored_count": 1015,
+      "skipped_count": 105
+    }
+  },
+  "contested_points": 140,
+  "contested_share": 1.0,
+  "decision_count": 14496,
+  "influence": {
+    "debate": {
+      "amount": [
+        [
+          0.0,
+          54.20000000000002
+        ],
+        [
+          60.14999999999999,
+          0.0
+        ]
+      ],
+      "arm": "debate",
+      "conceded": [
+        [
+          0,
+          83
+        ],
+        [
+          103,
+          0
+        ]
+      ],
+      "models": [
+        "gemma4:latest",
+        "qwen3:8b"
+      ],
+      "net_influence": [
+        [
+          "gemma4:latest",
+          20
+        ],
+        [
+          "qwen3:8b",
+          -20
+        ]
+      ],
+      "opportunities": [
+        [
+          0,
+          855
+        ],
+        [
+          855,
+          0
+        ]
+      ]
+    },
+    "debate_placebo": {
+      "amount": [
+        [
+          0.0,
+          55.85
+        ],
+        [
+          70.94999999999996,
+          0.0
+        ]
+      ],
+      "arm": "debate_placebo",
+      "conceded": [
+        [
+          0,
+          90
+        ],
+        [
+          111,
+          0
+        ]
+      ],
+      "models": [
+        "gemma4:latest",
+        "qwen3:8b"
+      ],
+      "net_influence": [
+        [
+          "gemma4:latest",
+          21
+        ],
+        [
+          "qwen3:8b",
+          -21
+        ]
+      ],
+      "opportunities": [
+        [
+          0,
+          849
+        ],
+        [
+          849,
+          0
+        ]
+      ]
+    },
+    "debate_rationale_only": {
+      "amount": [
+        [
+          0.0,
+          51.6
+        ],
+        [
+          124.2499999999999,
+          0.0
+        ]
+      ],
+      "arm": "debate_rationale_only",
+      "conceded": [
+        [
+          0,
+          82
+        ],
+        [
+          131,
+          0
+        ]
+      ],
+      "models": [
+        "gemma4:latest",
+        "qwen3:8b"
+      ],
+      "net_influence": [
+        [
+          "gemma4:latest",
+          49
+        ],
+        [
+          "qwen3:8b",
+          -49
+        ]
+      ],
+      "opportunities": [
+        [
+          0,
+          858
+        ],
+        [
+          858,
+          0
+        ]
+      ]
+    }
+  },
+  "shift_rates": {
+    "debate": {
+      "bands": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "mean_distance": null,
+          "reversal_rate": null,
+          "reversed_count": 0,
+          "shift_rate": null,
+          "shifted_count": 0
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 162,
+          "mean_distance": 0.09629629629629627,
+          "reversal_rate": 0.030864197530864196,
+          "reversed_count": 5,
+          "shift_rate": 0.2037037037037037,
+          "shifted_count": 33
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 365,
+          "mean_distance": 0.15246575342465785,
+          "reversal_rate": 0.1095890410958904,
+          "reversed_count": 40,
+          "shift_rate": 0.2410958904109589,
+          "shifted_count": 88
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1590,
+          "mean_distance": 0.12783018867924484,
+          "reversal_rate": 0.07421383647798742,
+          "reversed_count": 118,
+          "shift_rate": 0.21761006289308177,
+          "shifted_count": 346
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 123,
+          "mean_distance": 0.17845528455284537,
+          "reversal_rate": 0.032520325203252036,
+          "reversed_count": 4,
+          "shift_rate": 0.22764227642276422,
+          "shifted_count": 28
+        }
+      ],
+      "skipped_count": 0
+    },
+    "debate_placebo": {
+      "bands": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "mean_distance": null,
+          "reversal_rate": null,
+          "reversed_count": 0,
+          "shift_rate": null,
+          "shifted_count": 0
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 159,
+          "mean_distance": 0.09496855345911949,
+          "reversal_rate": 0.03773584905660377,
+          "reversed_count": 6,
+          "shift_rate": 0.1949685534591195,
+          "shifted_count": 31
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 359,
+          "mean_distance": 0.1557103064066855,
+          "reversal_rate": 0.11142061281337047,
+          "reversed_count": 40,
+          "shift_rate": 0.2479108635097493,
+          "shifted_count": 89
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1567,
+          "mean_distance": 0.1240587109125714,
+          "reversal_rate": 0.07147415443522655,
+          "reversed_count": 112,
+          "shift_rate": 0.21506062539885132,
+          "shifted_count": 337
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 123,
+          "mean_distance": 0.1447154471544715,
+          "reversal_rate": 0.008130081300813009,
+          "reversed_count": 1,
+          "shift_rate": 0.23577235772357724,
+          "shifted_count": 29
+        }
+      ],
+      "skipped_count": 0
+    },
+    "debate_rationale_only": {
+      "bands": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "mean_distance": null,
+          "reversal_rate": null,
+          "reversed_count": 0,
+          "shift_rate": null,
+          "shifted_count": 0
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 164,
+          "mean_distance": 0.1323170731707318,
+          "reversal_rate": 0.012195121951219513,
+          "reversed_count": 2,
+          "shift_rate": 0.2865853658536585,
+          "shifted_count": 47
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 368,
+          "mean_distance": 0.12554347826086976,
+          "reversal_rate": 0.057065217391304345,
+          "reversed_count": 21,
+          "shift_rate": 0.17119565217391305,
+          "shifted_count": 63
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1586,
+          "mean_distance": 0.13552963430012535,
+          "reversal_rate": 0.08448928121059268,
+          "reversed_count": 134,
+          "shift_rate": 0.1828499369482976,
+          "shifted_count": 290
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 122,
+          "mean_distance": 0.15163934426229506,
+          "reversal_rate": 0.05737704918032787,
+          "reversed_count": 7,
+          "shift_rate": 0.14754098360655737,
+          "shifted_count": 18
+        }
+      ],
+      "skipped_count": 0
+    }
+  },
+  "windows": {
+    "debate": {
+      "ties": 2,
+      "treatment_wins": 1,
+      "window_count": 5,
+      "windows": [
+        {
+          "control_return": 0.0,
+          "index": 0,
+          "margin": 0.0,
+          "treatment_return": 0.0
+        },
+        {
+          "control_return": 0.0,
+          "index": 1,
+          "margin": 0.0,
+          "treatment_return": 0.0
+        },
+        {
+          "control_return": 0.0031265156864572763,
+          "index": 2,
+          "margin": -0.0025861345102187183,
+          "treatment_return": 0.000540381176238558
+        },
+        {
+          "control_return": -0.0006678998245851497,
+          "index": 3,
+          "margin": -0.007149811154554375,
+          "treatment_return": -0.007817710979139525
+        },
+        {
+          "control_return": -0.012086054368357413,
+          "index": 4,
+          "margin": 0.011158812867959611,
+          "treatment_return": -0.0009272415003978018
+        }
+      ]
+    },
+    "debate_placebo": {
+      "ties": 2,
+      "treatment_wins": 1,
+      "window_count": 5,
+      "windows": [
+        {
+          "control_return": 0.0,
+          "index": 0,
+          "margin": 0.0,
+          "treatment_return": 0.0
+        },
+        {
+          "control_return": 0.0,
+          "index": 1,
+          "margin": 0.0,
+          "treatment_return": 0.0
+        },
+        {
+          "control_return": 0.0031265156864572763,
+          "index": 2,
+          "margin": -0.0013718244803955226,
+          "treatment_return": 0.0017546912060617537
+        },
+        {
+          "control_return": -0.0006678998245851497,
+          "index": 3,
+          "margin": -0.0016930496354297109,
+          "treatment_return": -0.0023609494600148606
+        },
+        {
+          "control_return": -0.012086054368357413,
+          "index": 4,
+          "margin": 0.011632881360646996,
+          "treatment_return": -0.0004531730077104168
+        }
+      ]
+    },
+    "debate_rationale_only": {
+      "ties": 2,
+      "treatment_wins": 1,
+      "window_count": 5,
+      "windows": [
+        {
+          "control_return": 0.0,
+          "index": 0,
+          "margin": 0.0,
+          "treatment_return": 0.0
+        },
+        {
+          "control_return": 0.0,
+          "index": 1,
+          "margin": 0.0,
+          "treatment_return": 0.0
+        },
+        {
+          "control_return": 0.0031265156864572763,
+          "index": 2,
+          "margin": -0.003818607732674617,
+          "treatment_return": -0.0006920920462173408
+        },
+        {
+          "control_return": -0.0006678998245851497,
+          "index": 3,
+          "margin": -0.01040663591138935,
+          "treatment_return": -0.0110745357359745
+        },
+        {
+          "control_return": -0.012086054368357413,
+          "index": 4,
+          "margin": 0.004169721923444558,
+          "treatment_return": -0.007916332444912855
+        }
+      ]
+    }
+  }
+}

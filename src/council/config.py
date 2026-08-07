@@ -67,7 +67,12 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
 
-    agent_models: tuple[str, ...] = ("qwen3:8b", "gemma4:latest")
+    agent_models: tuple[str, ...] = (
+        "qwen3.5:9b",
+        "granite4.1:8b",
+        "phi4:14b",
+        "gemma4:12b",
+    )
     """Distinct families rather than sizes of one family: architecture is a factor
     in this experiment, and four checkpoints of the same lineage would confound it
     with scale."""
