@@ -312,9 +312,9 @@ def influence_panel(results: Results, *, composition: str | None) -> None:
     )
     st.altair_chart(chart, width="stretch")
     st.caption(
-        "Rows concede to columns. The diagonal is not self-influence: a model "
-        "wears several personas, so it is one persona of a model giving ground to "
-        "another persona of the same model."
+        "Rows concede to columns. Every committee seats each base model exactly "
+        "once, so the diagonal is always zero and is there only to keep the "
+        "matrix square."
     )
     st.dataframe(net_influence_table(matrix), hide_index=True)
 

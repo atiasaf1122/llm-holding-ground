@@ -26,12 +26,12 @@ import pandas as pd
 from council.agents.provider import Provider
 from council.agents.runner import ContextIndex, ProviderFactory, build_contexts
 from council.agents.store import DecisionKey, DecisionStore
-from council.config import Settings
+from council.config import Settings, get_settings
 from council.debate.caller import DecisionCaller, SeatDecision
 from council.debate.compositions import Composition, balanced_design
 from council.debate.peers import NoPeersError, SeatView
 from council.debate.placebo import PlaceboPool
-from council.debate.protocol import DEFAULT_REBUTTAL_ROUNDS, run_debate
+from council.debate.protocol import DEFAULT_REBUTTAL_ROUNDS, StopReason, run_debate
 from council.domain.signal import Arm
 from council.evaluation.dispersion import Dispersion
 from council.evaluation.frames import (
@@ -103,7 +103,7 @@ def placebo_pool_for(decisions: pd.DataFrame, *, composition: Composition) -> Pl
     return {point: tuple(views) for point, views in sorted(pool.items())}
 
 
-def has_donor(pool: PlaceboPool, point: PointKey, *, min_gap: int = 0) -> bool:
+def has_donor(pool: PlaceboPool, point: PointKey, *, min_gap: int | None = None) -> bool:
     """Whether the pool holds a usable earlier day for this point.
 
     Asked in advance so that a point with no donor is skipped before its opening
@@ -116,7 +116,16 @@ def has_donor(pool: PlaceboPool, point: PointKey, *, min_gap: int = 0) -> bool:
     then raises a plain ``ValueError`` that ``except NoPeersError`` does not catch,
     so the whole sweep exits and the current group's uncheckpointed rows are lost.
     At the configured gap that was 118 of 138 points.
+
+    Args:
+        min_gap: defaults to ``settings.placebo_min_gap_sessions``, resolved the
+            same way the draw resolves it. A default of zero here would be that
+            drift written into the signature: a caller omitting the keyword would
+            pre-flight at no gap while the draw enforced sixty, which at the
+            configured gap disagrees on 116 of 138 contested points.
     """
+    if min_gap is None:
+        min_gap = get_settings().placebo_min_gap_sessions
     decision_date = point[0]
     earlier = sorted({key[0] for key in pool if key[0] < decision_date})
     if len(earlier) < min_gap:
@@ -260,7 +269,7 @@ class _Sweep:
             seed=self.settings.seed,
         )
         try:
-            await run_debate(
+            transcript = await run_debate(
                 composition=composition,
                 arm=arm,
                 dispersion=dispersion,
@@ -275,9 +284,24 @@ class _Sweep:
                 # configured with its own Settings must not have one bound
                 # silently read out from under it.
                 placebo_min_gap=self.settings.placebo_min_gap_sessions,
+                # The same, for the two bars that decide when a conversation
+                # ends. `StopReason` is a declared measurement, so a sweep whose
+                # Settings differ from the cached process-wide ones must stop its
+                # debates on its own bars rather than on the environment's.
+                agreement_spread=self.settings.agreement_spread,
+                stillness_rounds=self.settings.stillness_rounds,
             )
         except NoPeersError as exhausted:
             _LOG.warning("abandoned %s in %s: %s", dispersion.point, arm, exhausted)
+            return tuple(caller.generated), False
+        # A whole round failing to generate stops the conversation from inside
+        # rather than by raising, so the counting has to read the stop reason.
+        # Without this, zero survivors is booked as a conversation held while one
+        # survivor -- the strictly better outcome -- is booked as abandoned.
+        if transcript.stop_reason is StopReason.NO_SPEAKERS:
+            _LOG.warning(
+                "abandoned %s in %s: a whole round failed to generate", dispersion.point, arm
+            )
             return tuple(caller.generated), False
         return tuple(caller.generated), True
 
@@ -323,7 +347,16 @@ async def run_debate_arms(
         ),
         done=store.completed_keys(),
         rebuttal_rounds=rebuttal_rounds,
-        threshold=threshold,
+        # From this sweep's settings rather than left as None, for the same
+        # reason `placebo_min_gap` is threaded above: None reaches
+        # `run_debate._check_runnable`, which falls back to the process-wide
+        # settings, while `pipeline.select_contested` picked the points with the
+        # caller's `dispersion_threshold`. A run configured with its own Settings
+        # would select on one bar and validate on another, and a point the looser
+        # caller bar kept raises a plain ValueError that `except NoPeersError`
+        # does not catch -- taking the sweep down with the group's uncheckpointed
+        # rows.
+        threshold=settings.dispersion_threshold if threshold is None else threshold,
     )
 
     report = DebateReport()

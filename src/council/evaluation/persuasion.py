@@ -188,6 +188,14 @@ class ShiftRateReport:
     a curve drawn from a handful of surviving records must not be readable as a
     curve drawn from the run.
     """
+    threshold: float | None
+    """The bar every record in this report was judged against.
+
+    Carried up from :attr:`Shift.threshold` for the reason that attribute exists: a
+    shift rate cannot be read without knowing what counted as a shift, and a rate
+    published beside no bar is the drift that attribute was added to prevent. ``None``
+    only when there were no records to take a bar from.
+    """
 
 
 def shift_rate_by_confidence(
@@ -202,7 +210,17 @@ def shift_rate_by_confidence(
     Bands come from the same source calibration uses, so the two curves can be read
     against each other -- which is the point, since a shift rate only means something
     once the confidence axis is known to mean something.
+
+    Raises:
+        ValueError: if the records were not all judged against the same bar. A rate
+            aggregated over two definitions of a shift is a number with no bar to
+            print beside it, which is exactly what :attr:`Shift.threshold` exists to
+            make impossible.
     """
+    bars = {shift.threshold for shift in shift_records}
+    if len(bars) > 1:
+        raise ValueError(f"a shift rate mixes bars {sorted(bars)}")
+
     bands = make_bands(edges)
     counts = [0] * len(bands)
     shifted = [0] * len(bands)
@@ -234,6 +252,7 @@ def shift_rate_by_confidence(
             )
         ),
         skipped_count=skipped,
+        threshold=next(iter(bars), None),
     )
 
 

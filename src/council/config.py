@@ -75,10 +75,16 @@ class Settings(BaseSettings):
     # answer.
 
     # Agreement: the widest gap between any two seats. Set from the first run's
-    # measured spreads rather than by taste. Only 13.6% of committees already
+    # measured spreads rather than by taste. Only 15.6% of committees already
     # satisfy it before saying a word, so nearly every committee genuinely
-    # debates; 30.7% reach it after one round, so it is achievable. A looser bar
+    # debates; 30.8% reach it after one round, so it is achievable. A looser bar
     # of 0.50 would have stopped 36.6% of committees before they spoke.
+    #
+    # All three shares are measured with `evaluation.threshold.meets`, the same
+    # comparison `debate.protocol._agreed` applies, so the number quoted here and
+    # the predicate that ships cannot drift apart. They did once: under a bare
+    # `<=` the first share reads 13.6%, because 39 committees sit exactly on a
+    # 0.20 spread at round 0 and binary subtraction admits only 17 of them.
     #
     # It is also the same number as `shift_threshold`, and that is the point: a
     # spread under it means no two agents differ by more than what this study

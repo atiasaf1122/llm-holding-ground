@@ -7,16 +7,23 @@ result is the pipeline this suite exercises -- on CPU, with no daemon.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 
-from council.config import Settings
+from council.agents.mock import MockProvider
+from council.agents.prompt import PEER_HEADER
+from council.agents.provider import Completion, Provider, ProviderUnavailableError
+from council.config import Settings, get_settings
 from council.debate.compositions import balanced_design
-from council.debate.sweep import placebo_pool_for
+from council.debate.sweep import placebo_pool_for, run_debate_arms
 from council.domain.signal import Arm
 from council.evaluation.aggregation import mean
+from council.evaluation.dispersion import is_contested
 from council.evaluation.frames import frame_to_rows
 from council.pipeline import open_store, run_experiment, select_contested, stored_decisions
 from council.planning import TREATMENT_ARMS
@@ -265,6 +272,124 @@ def test_a_point_with_no_earlier_donor_is_dropped_before_it_costs_an_opening_rou
     assert placebo.abandoned > 0
     assert placebo.held == placebo.conversations - placebo.abandoned
     assert placebo_factory.total_calls == placebo.generated
+
+
+# -- a conversation that loses a whole round --------------------------------------
+
+
+class MuteAfterOpening:
+    """A backend that answers the opening question and then goes silent.
+
+    The peer header is the only thing in a prompt that says which round it belongs
+    to, and it is what a rebuttal round is: every seat fails, so the round after it
+    has nothing to answer.
+    """
+
+    def __init__(self) -> None:
+        self._answering = MockProvider()
+
+    async def preflight(self) -> None:
+        return None
+
+    async def generate(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: Mapping[str, Any],
+        max_tokens: int | None = None,
+    ) -> Completion:
+        if PEER_HEADER in user:
+            raise ProviderUnavailableError("the daemon went away mid-conversation")
+        return await self._answering.generate(
+            system=system, user=user, schema=schema, max_tokens=max_tokens
+        )
+
+    async def aclose(self) -> None:
+        return None
+
+
+def _mute_factory(model: str) -> Provider:
+    return MuteAfterOpening()
+
+
+def test_a_conversation_that_loses_a_whole_round_is_counted_as_abandoned(
+    settings: Settings, prices: pd.DataFrame
+) -> None:
+    # ``abandoned`` is documented as the conversations that could not run because a
+    # whole round failed to generate, and it exists so that a treatment arm quietly
+    # covering fewer points than its control is visible. A round in which every seat
+    # fails stops the debate from inside rather than by raising, and counting that as
+    # a conversation held books the *worst* outcome as a success -- while three of
+    # four seats failing, which is strictly better, still raises and is counted.
+    run_independent(settings, prices)
+    store = open_store(settings)
+    decisions = stored_decisions(store)
+
+    report = asyncio.run(
+        run_debate_arms(
+            settings=settings,
+            prices=prices,
+            decisions=decisions,
+            contested=select_contested(decisions, settings=settings),
+            provider_factory=_mute_factory,
+            store=store,
+            arms=(Arm.DEBATE,),
+            # Two rounds, because a round that loses every speaker can only be
+            # noticed by the round after it.
+            rebuttal_rounds=2,
+        )
+    )
+
+    assert report.conversations > 0
+    assert report.abandoned == report.conversations
+    assert report.held == 0
+
+
+# -- one bar, selected on and validated against -----------------------------------
+
+
+def test_the_sweep_validates_on_the_callers_bar_rather_than_the_process_wide_one(
+    settings: Settings, prices: pd.DataFrame
+) -> None:
+    # `select_contested` picks the points with the caller's `dispersion_threshold`
+    # and says so. `run_debate._check_runnable` re-checks each one, and with the
+    # bar left unforwarded that re-check falls back to `get_settings()`. A run
+    # configured with its own looser Settings then selects on one number and
+    # validates on another -- and the refusal is a plain ValueError, which
+    # `_Sweep.hold`'s `except NoPeersError` does not catch, so the sweep exits and
+    # the group's uncheckpointed rows go with it.
+    run_independent(settings, prices)
+    store = open_store(settings)
+    decisions = stored_decisions(store)
+    loose = settings.model_copy(update={"dispersion_threshold": 0.10})
+
+    # A point the looser bar keeps and the default one does not: agents apart on
+    # size, agreed on direction.
+    point = replace(
+        select_contested(decisions, settings=loose)[-1],
+        exposure_std=0.15,
+        long_count=4,
+        short_count=0,
+        flat_count=0,
+    )
+    assert is_contested(point, threshold=loose.dispersion_threshold)
+    assert not is_contested(point, threshold=get_settings().dispersion_threshold)
+
+    report = asyncio.run(
+        run_debate_arms(
+            settings=loose,
+            prices=prices,
+            decisions=decisions,
+            contested=(point,),
+            provider_factory=RecordingFactory(),
+            store=store,
+            arms=(Arm.DEBATE,),
+        )
+    )
+
+    assert report.conversations == report.held > 0
+    assert report.abandoned == 0
 
 
 # -- the whole thing in one call --------------------------------------------------

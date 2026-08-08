@@ -86,11 +86,11 @@ class ArmShifts:
 
     Kept together because the panel has to show both. A band's ``count`` is
     observations, and every contested decision point is answered once per seat of
-    every committee -- so on the balanced design one point contributes sixteen
-    observations. Reading ``count`` as the sample size of the pre-registered
-    statistic, which README declares over *decision points*, overstates the
-    evidence by that factor, and the only defence is showing the two numbers side
-    by side.
+    every committee -- so on the balanced design of eight committees of four seats
+    one point contributes thirty-two observations. Reading ``count`` as the sample
+    size of the pre-registered statistic, which README declares over *decision
+    points*, overstates the evidence by that factor, and the only defence is
+    showing the two numbers side by side.
     """
 
     arm: str

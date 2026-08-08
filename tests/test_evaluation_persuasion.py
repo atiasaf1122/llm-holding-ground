@@ -7,6 +7,8 @@ looks perfectly reasonable and measures nothing.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from council.config import get_settings
@@ -296,3 +298,29 @@ def test_no_shifts_leaves_every_band_empty() -> None:
     assert all(band.count == 0 for band in report.bands)
     assert all(band.shift_rate is None for band in report.bands)
     assert report.skipped_count == 0
+
+
+def test_the_aggregate_carries_the_bar_its_records_were_judged_against() -> None:
+    # Shift.threshold exists so a rate and its bar cannot drift apart in a written-up
+    # table. Dropped at aggregation, the published rate has no bar beside it and the
+    # drift is exactly as available as it was before the field was added.
+    frame = frame_of(*debate_pair(model="alpha", opening=0.8, closing=0.0, confidence=0.9))
+
+    report = shift_rate_by_confidence(shifts(frame, threshold=THRESHOLD))
+
+    assert report.threshold == THRESHOLD
+
+
+def test_a_rate_over_two_different_bars_refuses_rather_than_reporting_one_of_them() -> None:
+    # An aggregate whose records disagree about what counted has no bar to publish,
+    # and picking either would print a number under a definition half of it failed.
+    frame = frame_of(*debate_pair(model="alpha", opening=0.8, closing=0.0, confidence=0.9))
+    (shift,) = shifts(frame, threshold=THRESHOLD)
+    mixed = (shift, replace(shift, threshold=0.5))
+
+    with pytest.raises(ValueError, match="mixes bars"):
+        shift_rate_by_confidence(mixed)
+
+
+def test_an_aggregate_with_no_records_has_no_bar_to_carry() -> None:
+    assert shift_rate_by_confidence(()).threshold is None

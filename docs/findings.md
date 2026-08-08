@@ -261,75 +261,96 @@ never enters that comparison. That is the result below.
 
 | prior confidence | debate | **placebo** | rationale only |
 |---|---|---|---|
-| 0.20 – 0.40 | 0.204 (162) | **0.195** (159) | 0.287 (164) |
-| 0.40 – 0.60 | 0.241 (365) | **0.248** (359) | 0.171 (368) |
-| 0.60 – 0.80 | 0.218 (1590) | **0.215** (1567) | 0.183 (1586) |
-| 0.80 – 1.00 | 0.228 (123) | **0.236** (123) | 0.148 (122) |
+| 0.20 – 0.40 | 0.204 (162) | **0.201** (159) | 0.293 (164) |
+| 0.40 – 0.60 | 0.373 (365) | **0.393** (359) | 0.274 (368) |
+| 0.60 – 0.80 | 0.248 (1590) | **0.243** (1567) | 0.221 (1586) |
+| 0.80 – 1.00 | 0.407 (123) | **0.374** (123) | 0.311 (122) |
+
+*Recomputed from `docs/results/run-2models/decisions.parquet` with the shipped
+comparison. The rates first published here were produced by the bare
+`distance >= threshold` that `cbf6a55` replaced with `evaluation.threshold.meets`;
+the counts in brackets are unchanged, so this is the same data read against the
+corrected bar. See [`CLAIMS.md`](CLAIMS.md) D2–D5.*
 
 ### Finding 1 — it is compliance, not persuasion
 
-**Debate and placebo are indistinguishable.** The two columns sit within one
-percentage point of each other in three of four buckets, and in two of the four the
-*placebo* moved agents more. In the placebo arm the peers argue -- fluently,
-specifically, at the same length -- **about a different day entirely.**
+> **Rests on a contaminated placebo arm. See [`CLAIMS.md`](CLAIMS.md) D6.** The gap
+> `cbf6a55` enforces between a donor and the day being decided did not exist when
+> these numbers were generated. In the published run the donors were drawn a median
+> of 14 sessions back against a 60-session lookback, and 98.8% of placebo
+> conversations drew one from inside that lookback -- so the two windows overlapped
+> and the "unrelated" peer was arguing about largely the same bars. That
+> contamination biases toward exactly the conclusion drawn below, because a donor
+> arguing about nearly the same data makes the placebo behave like a real debate.
 
-Agents shift about one time in five, and they do it just as readily when the
-counter-argument has nothing to do with what they are deciding. What moves them is
-**being contradicted**, not what the contradiction says.
+**Debate and placebo are close.** The two columns sit within one percentage point of
+each other in two of four buckets, and in one of the four the *placebo* moved agents
+more. In the placebo arm the peers argue -- fluently, specifically, at the same
+length -- about **another day, but one whose window overlapped the window under
+decision.**
 
-**Without this arm, the number to report would have been "a 22% shift rate under
+Agents shift about one time in four, and they do it about as readily when the
+counter-argument came from a different day. That would say what moves them is
+**being contradicted** rather than what the contradiction says -- but on this run the
+donor day was not independent of the day being decided, so the arm cannot carry that
+reading and the conclusion is not asserted here.
+
+**Without this arm, the number to report would have been "a 27% shift rate under
 debate", and it would have been called persuasion.** There would have been no way to
-know otherwise. This is the entire justification for the control.
+know otherwise. This is the entire justification for the control -- and the reason
+the donor gap now has to hold for the control to mean anything.
 
-### Finding 2 — confidence does not protect a position
+### Finding 2 — withdrawn
 
-Down the debate column: **0.204, 0.241, 0.218, 0.228.** Flat. An agent that reported
-30% confidence and one that reported 90% abandon their positions at the same rate.
+> **Superseded. See [`CLAIMS.md`](CLAIMS.md) D2.** This read the debate column as
+> **0.204, 0.241, 0.218, 0.228**, called it flat, and concluded that *self-reported
+> confidence carries no information about who will hold*. Those figures came from
+> the bare `distance >= threshold` that `cbf6a55` replaced, and the movements that
+> comparison dropped are concentrated by confidence band rather than spread evenly --
+> so the flatness was the artefact and not the finding. Recomputed, the column is
+> **0.204, 0.373, 0.248, 0.407**, which is not flat.
+>
+> The conclusion is withdrawn rather than replaced. Nothing is asserted here about
+> what the corrected column says.
 
-That answers half of the question this project opened with -- *the majority, or the
-confident minority?* **Self-reported confidence carries no information about who
-will hold.** There is no case for listening to the confident dissenter, because the
-confidence does not predict anything.
+### Finding 3 — withdrawn
 
-### Finding 3 — the number is what destroys the confidence signal
+> **Superseded. See [`CLAIMS.md`](CLAIMS.md) D3.** This set a flat debate line
+> against a falling rationale-only one --
+>
+> ```
+> debate           0.204  0.241  0.218  0.228     flat
+> rationale only   0.287  0.171  0.183  0.148     falling
+> ```
+>
+> -- and concluded that *a peer's number is what destroys the confidence signal*.
+> Both rows came from the same bare comparison `cbf6a55` replaced. Recomputed they
+> are
+>
+> ```
+> debate           0.204  0.373  0.248  0.407
+> rationale only   0.293  0.274  0.221  0.311
+> ```
+>
+> and the flat debate line the reading was built on no longer exists to be tilted.
+> The conclusion is withdrawn rather than replaced.
 
-This one was not anticipated, and it is why the rationale-only arm exists.
+### Finding 4 — withdrawn
 
-Strip the peers' *exposure numbers* and show only their reasoning, and the flat line
-tilts:
-
-```
-debate           0.204  0.241  0.218  0.228     flat
-rationale only   0.287  0.171  0.183  0.148     falling
-```
-
-**With numbers on the page, confidence stops mattering. Without them, the confident
-hold and the unsure move.** The least-confident agents shift *more* than in a full
-debate (0.287 against 0.204) and the most-confident shift far *less* (0.148 against
-0.228).
-
-So the agents are not incapable of weighing their own certainty. **A peer's number
-overrides it** -- they converge toward a figure rather than toward an argument, and
-that anchoring is what flattens the relationship a rational agent would have.
-
-### Finding 4 — the influence matrix is not measuring persuasiveness
-
-Net concessions won:
-
-| arm | |
-|---|---|
-| debate | gemma4 **+20** |
-| placebo | gemma4 **+21** |
-| rationale only | gemma4 **+49** |
-
-If gemma4 argued more convincingly, its advantage should collapse when its arguments
-are irrelevant. **It does not move at all** (+20 against +21). What the matrix
-actually measures is that **qwen3 is the more yielding model**, whatever is said to
-it.
-
-The rationale-only figure being 2.4x larger says the asymmetry is *wider* without
-numbers -- consistent with Finding 3, where the number pulls everyone toward a
-midpoint and so compresses the difference between a firm model and a soft one.
+> **Superseded. See [`CLAIMS.md`](CLAIMS.md) D4.** This read net concessions won as
+> gemma4 **+20** in debate against **+21** in placebo, and concluded from the two
+> agreeing that the matrix measures *yieldingness rather than persuasiveness*. Both
+> bars in `evaluation/influence.py` now run through `meets` (`cbf6a55`, `027184d`).
+> Recomputed, net concessions won are
+>
+> | arm | |
+> |---|---|
+> | debate | gemma4 **+3** |
+> | placebo | gemma4 **-3** |
+> | rationale only | gemma4 **+56** |
+>
+> The placebo sign flips, so the two conditions no longer agree and the argument the
+> conclusion rested on is gone. It is withdrawn rather than replaced.
 
 ### And the reversal against the probe
 

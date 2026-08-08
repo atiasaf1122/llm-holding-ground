@@ -93,6 +93,93 @@ def test_a_concession_short_of_the_bar_is_not_recorded() -> None:
     assert concessions(frame, min_concession=BAR) == ()
 
 
+# -- the two bars, exactly on the boundary -----------------------------------
+#
+# This module has two thresholds -- how far the conceder travelled, and how much
+# more it gave than it got -- and both run through `evaluation.threshold.meets`
+# rather than a bare `>=`. Exposures land on a 0.05 grid, and a nominal 0.20 move
+# subtracts to either 0.19999999999999998 or 0.20000000000000007 depending on
+# where on that grid it happened; a bare comparison keeps one and drops the other.
+# Reverting either bar changed the published matrix (conceded went from 119/122 to
+# 83/103 on the two-model run, and the placebo's net sign flipped) while the whole
+# suite stayed green. These pin both bars from both sides of the error.
+
+
+def test_a_concession_of_exactly_the_bar_counts_when_the_subtraction_falls_short() -> None:
+    # 0.3 - 0.1 == 0.19999999999999998. Both bars sit on it: the conceder
+    # travelled the bar and the motionless anchor gave nothing back.
+    frame = debate(
+        debate_pair(model="mover", opening=0.1, closing=0.3),
+        debate_pair(model="anchor", opening=1.0, closing=1.0),
+    )
+
+    (concession,) = concessions(frame, min_concession=BAR)
+
+    assert concession.conceder_model == "mover"
+    assert concession.influencer_model == "anchor"
+    assert concession.amount == pytest.approx(0.2)
+
+
+def test_a_concession_of_exactly_the_bar_counts_when_the_subtraction_overshoots() -> None:
+    # The other side of the same error: 0.9 - 0.7 == 0.20000000000000007.
+    frame = debate(
+        debate_pair(model="mover", opening=0.7, closing=0.9),
+        debate_pair(model="anchor", opening=1.0, closing=1.0),
+    )
+
+    (concession,) = concessions(frame, min_concession=BAR)
+
+    assert concession.conceder_model == "mover"
+    assert concession.amount == pytest.approx(0.2)
+
+
+def test_the_travelled_bar_alone_on_the_boundary_still_records_a_concession() -> None:
+    # Isolating the second bar: the asymmetry is 0.6 -- far past the threshold,
+    # because the influencer moved away -- while the ground the conceder itself
+    # gave is exactly 0.20, subtracting short.
+    frame = debate(
+        debate_pair(model="mover", opening=0.1, closing=0.3),
+        debate_pair(model="drifter", opening=0.5, closing=0.9),
+    )
+
+    (concession,) = concessions(frame, min_concession=BAR)
+
+    assert concession.conceder_model == "mover"
+    assert concession.amount == pytest.approx(0.2)
+    assert concession.asymmetry == pytest.approx(0.6)
+
+
+def test_the_asymmetry_bar_alone_on_the_boundary_still_records_a_concession() -> None:
+    # Isolating the first bar: the conceder travelled 0.5, well past the
+    # threshold, but gave only 0.5 - 0.30000000000000004 == 0.19999999999999996
+    # more than it got.
+    frame = debate(
+        debate_pair(model="left", opening=-1.0, closing=-0.5),
+        debate_pair(model="right", opening=1.0, closing=0.7),
+    )
+
+    (concession,) = concessions(frame, min_concession=BAR)
+
+    assert concession.conceder_model == "left"
+    assert concession.amount == pytest.approx(0.5)
+    assert concession.asymmetry == pytest.approx(0.2)
+
+
+def test_the_asymmetry_bar_on_the_boundary_from_the_other_side_of_the_grid() -> None:
+    # 0.9 - 0.7 == 0.20000000000000007, this time as the asymmetry rather than
+    # as the distance travelled.
+    frame = debate(
+        debate_pair(model="left", opening=-1.0, closing=-0.1),
+        debate_pair(model="right", opening=1.0, closing=0.3),
+    )
+
+    (concession,) = concessions(frame, min_concession=BAR)
+
+    assert concession.conceder_model == "left"
+    assert concession.amount == pytest.approx(0.9)
+    assert concession.asymmetry == pytest.approx(0.2)
+
+
 def test_agents_who_opened_in_the_same_place_had_no_ground_to_give() -> None:
     frame = debate(
         debate_pair(model="left", opening=0.5, closing=-1.0),

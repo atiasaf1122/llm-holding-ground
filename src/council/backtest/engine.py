@@ -26,6 +26,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from council.evaluation.threshold import exceeds
+
 BPS = 1e-4
 
 
@@ -129,7 +131,7 @@ def run_ticker(
         # No decision for this session -- an agent that abstained, or a date before
         # the first signal. Holding is the honest interpretation: the strategy was
         # never told to do anything else.
-        if not np.isnan(target) and abs(target - held) > rebalance_threshold:
+        if not np.isnan(target) and exceeds(abs(target - held), rebalance_threshold):
             cost[index] = abs(target - held) * cost_bps * BPS
             held = float(target)
         position[index] = held

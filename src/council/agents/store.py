@@ -157,6 +157,20 @@ def decision_key(decision: Decision) -> DecisionKey:
     )
 
 
+def _completion_sort_key(record: CompletionRecord) -> DecisionKey:
+    """:data:`KEY_COLUMNS` read off an archive record, so a batch of them can be
+    written in the order :meth:`DecisionStore.consolidate` sorts the parquet into."""
+    return (
+        record.decision_date,
+        record.ticker,
+        record.model,
+        record.persona,
+        record.arm,
+        record.round_index,
+        record.composition,
+    )
+
+
 def to_storage_frame(decisions: Sequence[Decision]) -> pd.DataFrame:
     """Flatten decisions into the frame that goes to parquet.
 
@@ -294,9 +308,11 @@ class DecisionStore:
         The completions log is appended first and the part file written second,
         because the part file is what marks the triple done. A crash between the
         two therefore repeats the triple on the next run, adding duplicate lines
-        to an append-only archive that carries ``prompt_hash`` and can be
-        deduplicated. The other order would lose the archive for a triple whose
-        decisions were kept, and nothing later could tell.
+        to an append-only archive whose lines carry :data:`KEY_COLUMNS` and can be
+        deduplicated on them. ``prompt_hash`` does not identify a line: it digests
+        the two prompt turns alone, so every model shown the same text shares one.
+        The other order would lose the archive for a triple whose decisions were
+        kept, and nothing later could tell.
         """
         self._append_completions(completions)
         return self._write_part(model=model, persona=persona, ticker=ticker, decisions=decisions)
@@ -365,9 +381,16 @@ class DecisionStore:
             return
         self._completions_path.parent.mkdir(parents=True, exist_ok=True)
         # Sorted keys and an explicit newline so two runs of the same
-        # configuration produce byte-identical archives on any platform.
+        # configuration produce byte-identical archives on any platform. Sorted
+        # *records* as well, because `sort_keys` only orders the fields inside a
+        # line: the debate arms hand this list over in completion order, since a
+        # round's seats go out under `asyncio.gather` and `DecisionCaller` appends
+        # as each one returns, so line order would otherwise be whichever model
+        # was fastest that night. The key is `KEY_COLUMNS`, which is also the
+        # order `consolidate` sorts the parquet into, and it leaves the
+        # independent arm's existing date order untouched.
         with self._completions_path.open("a", encoding="utf-8", newline="\n") as handle:
-            for record in completions:
+            for record in sorted(completions, key=_completion_sort_key):
                 handle.write(json.dumps(record.as_json(), sort_keys=True, ensure_ascii=False))
                 handle.write("\n")
 

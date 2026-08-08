@@ -157,6 +157,7 @@ def plan_experiment(
     prices: pd.DataFrame,
     store: DecisionStore,
     contested: Sequence[PointKey] | None = None,
+    decisions: pd.DataFrame | None = None,
     compositions: Sequence[Composition] | None = None,
     personas: Sequence[Persona] = PERSONAS,
     rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
@@ -169,7 +170,12 @@ def plan_experiment(
         contested: the points a debate will be run on, ordinarily
             ``tuple(d.point for d in select_contested(...))``. ``None`` means the
             independent arm has not been generated yet, so the debate stages fall
-            back to :data:`ASSUMED_CONTESTED_SHARE` and are marked estimated.
+            back to :data:`ASSUMED_CONTESTED_SHARE` and are marked estimated. It is
+            also *ignored* while that arm is unfinished -- see below.
+        decisions: the stored decisions, used only to tell which contested points
+            the placebo arm can actually draw a donor for. Omitted, the placebo
+            stage counts every contested point, which is what the sweep would
+            spend only if every point had a donor.
     """
     committees = tuple(
         balanced_design(models=settings.agent_models) if compositions is None else compositions
@@ -177,6 +183,14 @@ def plan_experiment(
     run_plan = GenerationRunner(
         settings=settings, prices=prices, store=store, personas=personas
     ).plan()
+    # A contested set measured over a half-generated control arm is a measurement
+    # of the half, and the grid is swept model then persona then ticker, so an
+    # interrupted run leaves a slice rather than a sample. Counting the debate
+    # stages from it would print "(measured)" over a figure derived from agents
+    # that do not exist yet; falling back to the assumed share prints the estimate
+    # marker `render_plan` already has.
+    if run_plan.remaining > 0:
+        contested = None
     done = store.completed_keys()
     points = len(run_plan.decision_dates) * len(settings.tickers)
     stages = [
@@ -196,6 +210,8 @@ def plan_experiment(
                 assumed=round(points * assumed_contested_share),
                 done=done,
                 rebuttal_rounds=rebuttal_rounds,
+                decisions=decisions,
+                min_gap=settings.placebo_min_gap_sessions,
             )
             for arm in TREATMENT_ARMS
         ),
@@ -219,6 +235,8 @@ def _debate_stage(
     assumed: int,
     done: frozenset[DecisionKey],
     rebuttal_rounds: int,
+    decisions: pd.DataFrame | None = None,
+    min_gap: int | None = None,
 ) -> StagePlan:
     """One debate arm's stage, counted exactly where that is possible.
 
@@ -240,23 +258,58 @@ def _debate_stage(
             estimated=True,
         )
 
-    keys = {
-        key
-        for table in committees
-        for decision_date, ticker in contested
-        for key in conversation_keys(
+    # Counted per conversation, not per row, because that is the unit the sweep
+    # resumes on: `council.debate.sweep._Sweep.group` re-holds a whole conversation
+    # unless *every* one of its keys is stored. A conversation missing one row --
+    # one round-1 row recording a retriable failure, or one abandoned after its
+    # opening round -- costs seats x (rebuttal_rounds + 1) inferences on the next
+    # run. Billing the missing rows alone under-reports the resume budget by up to
+    # that factor, on exactly the runs where resuming is what the plan is for.
+    conversations = {
+        conversation_keys(
             composition=table,
             arm=arm,
             decision_date=decision_date,
             ticker=ticker,
             rebuttal_rounds=rebuttal_rounds,
         )
+        for table in committees
+        for decision_date, ticker in _points_the_sweep_will_hold(
+            contested, arm=arm, composition=table, decisions=decisions, min_gap=min_gap
+        )
     }
     return StagePlan(
         stage=DEBATE_STAGE,
         arm=str(arm),
-        inferences=len(keys),
-        completed=len(keys & done),
+        inferences=sum(len(keys) for keys in conversations),
+        completed=sum(len(keys) for keys in conversations if done.issuperset(keys)),
         parallelism=parallelism,
         estimated=False,
     )
+
+
+def _points_the_sweep_will_hold(
+    contested: Sequence[PointKey],
+    *,
+    arm: Arm,
+    composition: Composition,
+    decisions: pd.DataFrame | None,
+    min_gap: int | None,
+) -> tuple[PointKey, ...]:
+    """The contested points this arm will actually be run on.
+
+    Two of the three arms debate every one of them. The placebo does not:
+    :func:`council.debate.sweep.run_debate_arms` skips a point whose pool holds no
+    usable earlier day, so counting all of them quotes work no run will ever spend
+    and leaves ``remaining`` unable to reach zero however many times ``debate`` is
+    run -- which is exactly what this module's docstring promises cannot happen.
+    """
+    if arm is not Arm.DEBATE_PLACEBO or decisions is None:
+        return tuple(contested)
+    # Imported here rather than at module scope: council.debate.sweep reads
+    # TREATMENT_ARMS and conversation_keys from this module, so a top-level import
+    # would close the cycle.
+    from council.debate.sweep import has_donor, placebo_pool_for
+
+    pool = placebo_pool_for(decisions, composition=composition)
+    return tuple(point for point in contested if has_donor(pool, point, min_gap=min_gap))

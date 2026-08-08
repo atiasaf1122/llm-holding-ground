@@ -83,9 +83,11 @@ class InfluenceMatrix:
     """Who moved toward whom, aggregated over base models.
 
     Rows are the agent that conceded, columns the agent it conceded to. The diagonal
-    is meaningful and is not self-influence: a model wears four personas here, so
-    ``[i][i]`` counts one persona of a model giving ground to another persona of the
-    same model.
+    is always zero and is kept only to keep the matrix square: every composition
+    this project builds -- the rotations and the uniform references alike -- seats
+    each base model exactly once, and
+    :func:`~council.debate.compositions._resolve_models` refuses a repeated model
+    name, so no two seats in one conversation ever share a row index.
 
     One arm. The placebo exists to be differenced against the real debate, so a table
     that had summed the two would answer the question the placebo was built to ask
@@ -190,9 +192,12 @@ def influence_matrix(
                 continue
             first, second = index_of[left.model], index_of[right.model]
             opportunities[first, second] += 1
-            # Two personas of one base model land on the diagonal, where the mirrored
-            # write is the same cell: counting it twice would halve every same-model
-            # rate, and with two models across four personas that is most of them.
+            # Defensive rather than a live case. Two seats of one base model would
+            # land on the diagonal, where the mirrored write is the same cell and
+            # counting it twice would halve the rate -- but no composition seats a
+            # model twice, so this guard never fires on real data. It stays because
+            # the function takes a frame rather than a composition and cannot
+            # verify where the frame came from.
             if second != first:
                 opportunities[second, first] += 1
         for concession in _concessions_in(group, limit):

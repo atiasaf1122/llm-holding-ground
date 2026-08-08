@@ -332,6 +332,7 @@ def _arm_json(outcome: ArmOutcome) -> dict[str, Any]:
 def _shift_json(report: ShiftRateReport) -> dict[str, Any]:
     return {
         "skipped_count": report.skipped_count,
+        "threshold": report.threshold,
         "bands": [
             {
                 "band": band.band.label,

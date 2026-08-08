@@ -113,6 +113,19 @@ def test_an_infinite_sharpe_is_named_rather_than_nulled_or_written_as_infinity(
     assert payload["arms"][0]["metrics"]["sortino"] == "-Infinity"
 
 
+def test_the_published_shift_rate_names_the_bar_it_was_judged_against(
+    results: ExperimentResults,
+) -> None:
+    # A shift rate cannot be read without knowing what counted as a shift. The bar is
+    # carried on every record for that reason; dropping it at the artefact publishes
+    # the rate alone, which is the drift Shift.threshold exists to prevent.
+    payload = results_as_json(results)
+
+    for arm, block in payload["shift_rates"].items():
+        assert "threshold" in block, arm
+        assert block["threshold"] == results.shift_rates[arm].threshold
+
+
 def test_a_finite_ratio_stays_a_number(results: ExperimentResults) -> None:
     payload = results_as_json(results)
 

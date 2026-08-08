@@ -10,6 +10,8 @@ checked the answer was finite would pass under lookahead.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -169,6 +171,37 @@ def test_a_move_exactly_equal_to_the_threshold_is_suppressed() -> None:
     result = backtest(opens, targets_on(calendar, {0: THRESHOLD}))
 
     assert result.position[1] == 0.0
+
+
+def test_no_one_notch_step_along_the_exposure_grid_ever_trades() -> None:
+    # Exposures arrive on a 0.05 grid and the default bar is 0.05, so a one-notch
+    # step is a move *of* the bar and the documented rule -- "no trade unless the
+    # target moves further than this" -- suppresses all forty of them. A bare
+    # ``>`` decides it by representation error instead: abs(0.25 - 0.30) is
+    # 0.04999999999999999 and holds, while sixteen of the forty adjacent pairs
+    # come out strictly above 0.05 and trade.
+    grid = [round(-1.0 + 0.05 * step, 10) for step in range(41)]
+    adjacent = list(pairwise(grid))
+    assert sum(1 for first, second in adjacent if abs(first - second) > 0.05) == 16
+
+    opens = opens_of([100.0] * 5)
+    calendar = pd.DatetimeIndex(opens.index)
+    # An entry from the far end of the range first, so the book sits on ``held``
+    # exactly -- including the notches a flat book cannot reach in one move.
+    def entry(held: float) -> float:
+        return -1.0 if held > 0.0 else 1.0
+
+    traded = [
+        (held, asked)
+        for first, second in adjacent
+        for held, asked in ((first, second), (second, first))
+        if backtest(
+            opens, targets_on(calendar, {0: entry(held), 1: held, 2: asked})
+        ).position[3]
+        != held
+    ]
+
+    assert traded == []
 
 
 def test_a_zero_threshold_lets_every_revision_through() -> None:

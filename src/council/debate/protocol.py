@@ -12,11 +12,16 @@ view is an input to any other final view. :func:`rebuttal_peers` is where that
 holds -- a whole round's peer blocks are a pure function of the previous round,
 built before any of them is sent.
 
-**One rebuttal round in v1.** Opening view, peer block, final view: two calls per
-seat, eight per committee. :data:`DEFAULT_REBUTTAL_ROUNDS` is a parameter rather
-than an assumption threaded through the code, so a later run can raise it -- with
-one caveat, that :mod:`council.evaluation.persuasion` rejects a round index above
-1 today and would have to be taught what a middle round means first.
+**Variable length, ended by a condition rather than by a count.** An opening view,
+then rebuttal rounds until one of three things happens: every seat is within
+``settings.agreement_spread`` of every other, nobody moves for
+``settings.stillness_rounds`` consecutive rounds, or the cap
+``settings.max_debate_rounds`` is reached. Which one ended it is recorded as
+:class:`StopReason` and is itself a measurement -- a committee that stops without
+agreeing has entrenched, which is not the same result as one that converged. One
+caveat survives from the fixed-length version: :mod:`council.evaluation.persuasion`
+rejects a round index above 1 and would have to be taught what a middle round means
+before a run raises the cap above :data:`DEFAULT_REBUTTAL_ROUNDS`.
 
 **Contested points only.** On a day the agents already agree, a conversation
 cannot change the committee's decision, and skipping those days is most of the
@@ -266,8 +271,12 @@ async def run_debate(
     Raises:
         ValueError: for the independent arm, for an uncontested point, for fewer
             than one rebuttal round, or for a placebo arm with no usable donor.
-        NoPeersError: if a whole round failed to generate, leaving the next round
-            with nothing to react to.
+        NoPeersError: if the opening round left fewer than two speakers, or if a
+            rebuttal round leaves a single seat with no peer to answer. A
+            *rebuttal* round in
+            which every seat failed does not raise: the conversation ends and is
+            returned with :attr:`StopReason.NO_SPEAKERS`, which the caller has to
+            read to tell it from a debate that ran to a stopping condition.
     """
     settings = get_settings()
     cap = settings.max_debate_rounds if max_rounds is None else max_rounds
@@ -340,6 +349,16 @@ async def run_debate(
             )
         )
 
+        # Read here rather than only at the top of the next iteration. The round
+        # just taken may be the last the cap allows, and in the placebo arm the
+        # next iteration reads a donor block that is never empty -- so a round in
+        # which every seat failed would be returned as CAP and counted as a
+        # conversation held, in the placebo arm at any cap and in all three at the
+        # shipped cap of one.
+        if not live_views(rounds[-1]):
+            reason = StopReason.NO_SPEAKERS
+            break
+
         if _agreed(rounds[-1], spread=spread):
             reason = StopReason.AGREED
             break
@@ -411,7 +430,8 @@ def _check_runnable(
 
 
 def _check_someone_spoke(opening: Sequence[Turn], *, point: PointKey) -> None:
-    """Drop a point whose whole opening round failed -- in every arm, placebo included.
+    """Drop a point whose opening round left fewer than two speakers -- in every arm,
+    placebo included.
 
     The placebo shows a donor's views and so has something to render whatever
     happened here, which is exactly why it needs the check written out: whole-round
@@ -419,10 +439,16 @@ def _check_someone_spoke(opening: Sequence[Turn], *, point: PointKey) -> None:
     than on random points, so an arm that kept them while the other two dropped
     them would be backtested over a different set of decision points, and the
     difference between the arms would absorb that selection.
+
+    Two speakers rather than one, because one is the same selection with a smaller
+    number on it. A lone survivor has no peer, so :func:`rebuttal_peers` raises out
+    of the real arms -- while the placebo, whose peer block comes from the donor
+    pool and never reads this round, holds the point and debates on.
     """
-    if not live_views(opening):
+    if len(live_views(opening)) < 2:
         raise NoPeersError(
-            f"every opening view at {point[0]} {point[1]} failed; there is nothing to debate"
+            f"fewer than two opening views at {point[0]} {point[1]} survived; "
+            "there is nobody to debate with"
         )
 
 

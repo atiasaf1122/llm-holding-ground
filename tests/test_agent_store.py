@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from council.agents.prompt import prompt_hash
 from council.agents.store import (
     KEY_COLUMNS,
     STORED_COLUMNS,
@@ -131,6 +133,31 @@ def test_the_same_agent_in_two_arms_does_not_share_a_part_file() -> None:
     ) != part_filename(
         model="qwen3:8b", persona="momentum-bold", ticker="AAPL", keys=[decision_key(debated)]
     )
+
+
+def test_the_archive_is_deduplicated_on_the_key_columns_and_not_on_the_prompt_hash() -> None:
+    # `DecisionStore.checkpoint` tells a reader how to clean an archive a crash
+    # duplicated, so the key it names has to be one. `prompt_hash` is not:
+    # :func:`council.agents.prompt.prompt_hash` digests the two prompt turns
+    # alone, carrying no model, arm, composition or round, so every model shown
+    # the same text shares one. In `data/completions.jsonl` its 28,608 lines hold
+    # 13,744 distinct values with 28 lines on the largest, and deduplicating on it
+    # would delete 14,864 genuinely distinct decisions from the one artefact that
+    # exists so a later question can be answered without another night of
+    # inference.
+    shared = prompt_hash("you are an analyst", "returns: +1.00")
+    one = replace(make_record(), model="qwen3:8b", prompt_hash=shared)
+    another = replace(make_record(), model="gemma4:12b", prompt_hash=shared)
+
+    def archive_key(line: CompletionRecord) -> tuple[object, ...]:
+        return tuple(line.as_json()[column] for column in KEY_COLUMNS)
+
+    assert one.prompt_hash == another.prompt_hash
+    assert archive_key(one) != archive_key(another)
+
+    documented = DecisionStore.checkpoint.__doc__ or ""
+    assert "KEY_COLUMNS" in documented
+    assert "``prompt_hash`` and can be deduplicated" not in documented
 
 
 def test_a_part_file_is_named_the_same_whatever_order_its_decisions_arrive_in() -> None:
@@ -389,6 +416,41 @@ def test_completions_are_appended_one_json_object_per_line(store: DecisionStore)
     lines = store.completions_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
     assert json.loads(lines[0])["system"] == "you are an analyst"
+
+
+def test_the_archive_is_written_in_key_order_whatever_order_the_batch_arrived_in(
+    tmp_path: Path,
+) -> None:
+    # The archive promises byte-identical output for two runs of one configuration.
+    # `sort_keys` orders the fields inside a line and nothing else: a debate round
+    # puts every seat in flight under `asyncio.gather` and `DecisionCaller` appends
+    # each reply as it lands, so the list reaching this method is in completion
+    # order -- whichever model was fastest that night.
+    batch = [
+        replace(make_record(), model=model, round_index=round_index)
+        for round_index in (0, 1)
+        for model in ("phi4:14b", "qwen3.5:9b")
+    ]
+
+    archives = []
+    for index, order in enumerate((batch, list(reversed(batch)))):
+        store = DecisionStore(
+            decisions_path=tmp_path / f"decisions-{index}.parquet",
+            completions_path=tmp_path / f"completions-{index}.jsonl",
+        )
+        store.checkpoint(
+            model="rotation-0",
+            persona=str(Arm.DEBATE),
+            ticker="AAPL",
+            decisions=[],
+            completions=order,
+        )
+        archives.append(store.completions_path.read_text(encoding="utf-8"))
+
+    assert archives[0] == archives[1]
+    written = [json.loads(line) for line in archives[0].splitlines()]
+    keys = [(line["model"], line["round_index"]) for line in written]
+    assert keys == sorted(keys)
 
 
 def test_the_archive_keeps_the_whole_prompt_and_the_raw_response(store: DecisionStore) -> None:

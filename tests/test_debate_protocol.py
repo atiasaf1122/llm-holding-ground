@@ -22,6 +22,7 @@ from council.debate.placebo import PlaceboPool, select_placebo_point
 from council.debate.protocol import (
     DEFAULT_REBUTTAL_ROUNDS,
     DebateTranscript,
+    StopReason,
     live_views,
     rebuttal_peers,
     run_debate,
@@ -478,6 +479,57 @@ async def test_a_round_in_which_everyone_failed_stops_the_debate(arm: Arm) -> No
     # backtested over different sets of decision points.
     with pytest.raises(NoPeersError):
         await _run(arm, caller)
+
+
+async def test_one_surviving_opening_view_is_dropped_by_every_arm() -> None:
+    # Arrange -- three of four seats fail their opening, leaving a lone survivor.
+    # It has no peer, so `rebuttal_peers` raises out of the two real arms; the
+    # placebo's round-1 block comes from the donor pool and never reads this
+    # round, so it would hold the point and debate on. Same selection effect as
+    # the whole-round case above, with a smaller number on it.
+    messages: dict[Arm, str] = {}
+
+    # Act
+    for arm in DEBATE_ARMS:
+        caller = MockCaller(failing_models=frozenset(MODELS[1:]), failing_round=0)
+        with pytest.raises(NoPeersError) as raised:
+            await _run(arm, caller)
+        messages[arm] = str(raised.value)
+
+    # Assert -- identically, or the arms cover different point sets.
+    assert len(set(messages.values())) == 1
+    assert "fewer than two opening views" in messages[Arm.DEBATE_PLACEBO]
+
+
+async def test_a_rebuttal_round_that_all_failed_ends_the_debate_without_raising() -> None:
+    # The opening round raises; a rebuttal round does not. It sets NO_SPEAKERS and
+    # returns, so a caller that only writes `except NoPeersError` books the point
+    # as a conversation held. `debate.sweep._Sweep.hold` reads the stop reason for
+    # exactly this reason, and run_debate's Raises block has to say so.
+    caller = MockCaller(failing_models=frozenset(MODELS), failing_round=1)
+
+    transcript = await _run(Arm.DEBATE, caller, rebuttal_rounds=3)
+
+    assert transcript.stop_reason is StopReason.NO_SPEAKERS
+    assert transcript.rebuttal_rounds == 1
+
+
+@pytest.mark.parametrize("arm", DEBATE_ARMS)
+async def test_the_last_round_the_cap_allows_is_read_for_speakers_too(arm: Arm) -> None:
+    # Arrange -- the test above runs to a cap of three, so the empty round is
+    # noticed at the top of the *next* iteration. `run_debate_arms` ships
+    # DEFAULT_REBUTTAL_ROUNDS, where there is no next iteration: the reason stayed
+    # CAP and `_Sweep.hold` booked a conversation with no usable rebuttal row as
+    # held. In the placebo arm the top-of-loop view is the donor block, which is
+    # never empty, so NO_SPEAKERS was unreachable there at any cap at all.
+    caller = MockCaller(failing_models=frozenset(MODELS), failing_round=1)
+
+    # Act
+    transcript = await _run(arm, caller, rebuttal_rounds=DEFAULT_REBUTTAL_ROUNDS)
+
+    # Assert
+    assert transcript.stop_reason is StopReason.NO_SPEAKERS
+    assert live_views(transcript.final) == ()
 
 
 # -- room for more rounds -----------------------------------------------------

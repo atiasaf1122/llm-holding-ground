@@ -117,15 +117,22 @@ def dryrun_settings(args: argparse.Namespace) -> Settings:
 
     # A dry run is a few dozen sessions, and the production placebo gap is a full
     # lookback window -- no donor could satisfy it here, and every placebo
-    # conversation would be abandoned. Weakened rather than waived, and said out
-    # loud rather than left for a reader to infer from a suspiciously clean run:
-    # the placebo in a dry run is not the control the real arm gets, and a dry
-    # run's numbers were never results in the first place.
+    # conversation would be abandoned. Waived, not weakened: a gap of 1 admits the
+    # session immediately before the decision, which is arithmetically the same set
+    # of donors a gap of 0 admits, so the dry run's placebo carries no
+    # donor-distance control at all. Said out loud rather than left for a reader to
+    # infer from a suspiciously clean run: the placebo in a dry run is not the
+    # control the real arm gets, and a dry run's numbers were never results in the
+    # first place.
     if settings.placebo_min_gap_sessions > 1:
-        # Unconditionally, and not on a calculation about the calendar: the pool a
-        # donor is drawn from holds only the *contested* points, which is a small
-        # and unpredictable fraction of the sessions. A dry run that guessed wrong
-        # would abandon every placebo conversation and still exit zero.
+        # Unconditionally, and not on a calculation about the calendar. The pool a
+        # donor is drawn from is the *independent* arm's sessions -- every one of
+        # them, see `debate.sweep.placebo_pool_for` -- and after the
+        # `lookback_days - 1` warm-up a 90-session dry run leaves about 31 decision
+        # dates to fill it, fewer than the configured 60 the gap asks for. That
+        # margin moves with `--start`, `--end` and `lookback_days`, so a dry run
+        # that recomputed it and guessed wrong would abandon every placebo
+        # conversation and still exit zero.
         updates["placebo_min_gap_sessions"] = 1
         _LOG.warning(
             "dry run: placebo donor gap reduced from %d sessions to 1. Its calendar "
@@ -166,6 +173,9 @@ def do_plan(args: argparse.Namespace, out: TextIO) -> int:
         prices=prices,
         store=store,
         contested=contested,
+        # So the placebo stage counts the points it can draw a donor for rather
+        # than every contested point, which the sweep would never spend.
+        decisions=decisions,
         seconds_per_inference=args.seconds_per_inference,
     )
     print(render_plan(plan), file=out)

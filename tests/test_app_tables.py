@@ -9,12 +9,14 @@ went on to earn rather than one that had already happened.
 
 from __future__ import annotations
 
+import inspect
 from datetime import date
 
 import pandas as pd
 import pytest
 
 from council.app.tables import (
+    ArmShifts,
     calibration_table,
     coverage_note,
     coverage_table,
@@ -25,6 +27,8 @@ from council.app.tables import (
     shift_rate_table,
     shift_reports,
 )
+from council.config import Settings
+from council.debate.compositions import balanced_design
 from council.evaluation.calibration import calibrate
 from council.evaluation.influence import influence_matrix
 from helpers_app import DAY, OPENING, REBUTTAL, frame_of, independent, stored
@@ -100,6 +104,24 @@ def test_the_distinct_points_behind_a_band_are_reported_beside_the_observations(
 
     assert top["count"].tolist() == [2]
     assert top["points"].tolist() == [1]
+
+
+def test_the_warning_beside_count_names_the_multiplier_the_design_produces() -> None:
+    # The whole purpose of that docstring is to say how far `count` overstates the
+    # sample size of a statistic README declares over decision points. A warning
+    # that understates the overstatement is worse than none, so the number in the
+    # prose is pinned to the design that produces it.
+    design = balanced_design(models=Settings().agent_models)
+    seats = {len(composition.seats) for composition in design}
+
+    assert seats == {4}
+    assert len(design) == 8
+    per_point = len(design) * seats.pop()
+    assert per_point == 32
+
+    documented = inspect.getdoc(ArmShifts) or ""
+    assert "thirty-two observations" in documented
+    assert "sixteen" not in documented
 
 
 def test_a_band_nobody_occupied_has_no_points_either() -> None:
