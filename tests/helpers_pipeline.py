@@ -51,6 +51,11 @@ def make_settings(data_dir: Path) -> Settings:
         lookback_days=LOOKBACK,
         concurrency=4,
         data_dir=data_dir,
+        # The production gap is a full lookback window, so that a placebo donor
+        # shares no bars with the day being decided. These fixtures run a handful
+        # of sessions and could not satisfy it; the gap itself is exercised in
+        # tests/test_debate_placebo.py against a pool built for the purpose.
+        placebo_min_gap_sessions=1,
     )
 
 

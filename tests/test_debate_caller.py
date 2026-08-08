@@ -57,6 +57,10 @@ async def test_a_debate_writes_two_rows_per_seat_in_the_arm_it_was_run_under() -
         price_context=PRICE_CONTEXT,
         caller=caller,
         seed=SEED,
+        # Pinned: these assertions count rows, and the round count is now an
+        # outcome of the conversation rather than a constant.
+        max_rounds=1,
+        agreement_spread=-1.0,
     )
 
     # Assert
@@ -82,6 +86,10 @@ async def test_the_opening_rows_carry_the_control_prompts_hash() -> None:
         price_context=PRICE_CONTEXT,
         caller=caller,
         seed=SEED,
+        # Pinned: these assertions count rows, and the round count is now an
+        # outcome of the conversation rather than a constant.
+        max_rounds=1,
+        agreement_spread=-1.0,
     )
 
     # Assert
@@ -106,6 +114,10 @@ async def test_a_rebuttal_row_records_the_peer_block_it_was_answering() -> None:
         price_context=PRICE_CONTEXT,
         caller=caller,
         seed=SEED,
+        # Pinned: these assertions count rows, and the round count is now an
+        # outcome of the conversation rather than a constant.
+        max_rounds=1,
+        agreement_spread=-1.0,
     )
 
     # Assert -- the archive line holds the full user turn, peer block included, so
@@ -138,6 +150,10 @@ async def test_a_model_that_never_answers_still_produces_rows_and_shows_no_peer(
         price_context=PRICE_CONTEXT,
         caller=caller,
         seed=SEED,
+        # Pinned: these assertions count rows, and the round count is now an
+        # outcome of the conversation rather than a constant.
+        max_rounds=1,
+        agreement_spread=-1.0,
     )
 
     # Assert

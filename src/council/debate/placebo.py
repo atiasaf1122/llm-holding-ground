@@ -43,7 +43,13 @@ ordinary-looking data and neither failure is visible in a stored row.
 
 
 def donor_views(
-    *, pool: PlaceboPool | None, point: PointKey, composition: Composition, seed: int | None
+    *,
+    pool: PlaceboPool | None,
+    point: PointKey,
+    composition: Composition,
+    seed: int | None,
+    round_index: int = 1,
+    min_gap: int | None = None,
 ) -> tuple[SeatView, ...]:
     """The donor point's views, matched to this committee, in committee order.
 
@@ -56,13 +62,24 @@ def donor_views(
     if pool is None:
         raise ValueError("the placebo arm needs a pool of other days' views to draw from")
     donor = select_placebo_point(
-        pool=pool, point=point, composition=composition.identifier, seed=seed
+        pool=pool,
+        point=point,
+        composition=composition.identifier,
+        seed=seed,
+        round_index=round_index,
+        min_gap=min_gap,
     )
     return seated_views(pool[donor], composition=composition)
 
 
 def select_placebo_point(
-    *, pool: PlaceboPool, point: PointKey, composition: str, seed: int | None = None
+    *,
+    pool: PlaceboPool,
+    point: PointKey,
+    composition: str,
+    seed: int | None = None,
+    round_index: int = 1,
+    min_gap: int | None = None,
 ) -> PointKey:
     """Pick the earlier decision point whose views the placebo arm will show.
 
@@ -79,16 +96,61 @@ def select_placebo_point(
             the placebo into a second debate arm wearing the control's label.
     """
     decision_date, ticker = point
-    candidates = sorted(key for key, views in pool.items() if key[0] < decision_date and views)
+    settings = get_settings()
+    gap = settings.placebo_min_gap_sessions if min_gap is None else min_gap
+
+    # Sessions, not calendar days: the pool holds one entry per trading day, so
+    # counting entries back is counting sessions back. A donor nearer than the
+    # lookback shares bars with the window under decision -- the first run drew a
+    # median of 14 sessions against a 60-session lookback, which left the
+    # "unrelated" peer arguing about roughly the same data. See config.
+    sessions = sorted({key[0] for key in pool})
+    cutoff = decision_date
+    if gap > 0:
+        earlier = [day for day in sessions if day < decision_date]
+        if len(earlier) < gap:
+            raise ValueError(
+                f"no placebo donor for {decision_date} {ticker}: the pool holds "
+                f"{len(earlier)} earlier session(s), fewer than the {gap} required"
+            )
+        cutoff = earlier[-gap]
+
+    # Both bounds, and the strict one is not redundant: with a gap of zero the
+    # cutoff *is* the decision date, and a `<=` filter alone would admit the day
+    # being decided as its own donor -- the exact lookahead this module exists to
+    # refuse, reintroduced by the gap check that was meant to strengthen it.
+    candidates = sorted(
+        key for key, views in pool.items() if key[0] < decision_date and key[0] <= cutoff and views
+    )
     if not candidates:
         raise ValueError(
-            f"no placebo donor for {decision_date} {ticker}: the pool holds no earlier date"
+            f"no placebo donor for {decision_date} {ticker}: the pool holds no session "
+            f"at least {gap} back"
         )
 
-    resolved_seed = get_settings().seed if seed is None else seed
+    resolved_seed = settings.seed if seed is None else seed
     token = f"{resolved_seed}|{composition}|{decision_date.isoformat()}|{ticker}"
-    digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
-    chosen = candidates[int.from_bytes(digest, "big") % len(candidates)]
+
+    # A deterministic order over the candidates, then the round's position in it --
+    # rather than a fresh hash per round, which can and does draw the same donor
+    # twice. Two rounds shown identical peers would let the control reach
+    # stillness for a reason the treatment never faces (nothing new to answer),
+    # and stillness is one of the things this design measures.
+    #
+    # Ordering by a per-candidate digest rather than shuffling with a seeded RNG:
+    # a generator advanced once per draw would make each donor depend on how many
+    # were drawn before it, so a rerun over a different date range would silently
+    # rewrite an arm already on disk.
+    ordered = sorted(
+        candidates,
+        key=lambda key: hashlib.blake2b(
+            f"{token}|{key[0].isoformat()}|{key[1]}".encode(), digest_size=8
+        ).digest(),
+    )
+    # Wraps only when a conversation outlasts the pool, which the production gap
+    # and round cap make impossible; the modulo is here so a small fixture cannot
+    # raise instead of repeating.
+    chosen = ordered[(round_index - 1) % len(ordered)]
 
     # The filter above already guarantees this. It is checked anyway because the
     # cost of the guarantee ever failing is the entire placebo arm, silently, and

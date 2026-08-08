@@ -51,6 +51,7 @@ import pandas as pd
 from council.config import get_settings
 from council.evaluation.frames import ARM, DebateKey, debate_sort_key, frame_to_rows
 from council.evaluation.persuasion import Shift, shifts
+from council.evaluation.threshold import meets
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,7 +248,10 @@ def _concessions_in(group: Sequence[Shift], limit: float) -> tuple[Concession, .
         # Exact symmetry is excluded on its own line rather than by the bar, so that
         # a caller passing a bar of 0.0 to inspect every asymmetric move still cannot
         # turn a perfect meeting-in-the-middle into two agents persuading each other.
-        if asymmetry == 0.0 or abs(asymmetry) < limit:
+        # Through `meets` rather than a bare comparison: exposures land on a coarse
+        # grid, and `abs(0.3 - 0.1) < 0.20` is True in binary floating point. The
+        # same defect halved the published influence figures.
+        if asymmetry == 0.0 or not meets(abs(asymmetry), limit):
             continue
         if asymmetry > 0.0:
             conceder, influencer, travelled = left, right, toward_left

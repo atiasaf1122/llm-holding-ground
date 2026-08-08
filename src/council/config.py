@@ -63,6 +63,46 @@ class Settings(BaseSettings):
     # teaches nothing -- and skipping them is most of the compute budget.
     dispersion_threshold: float = Field(default=0.25, ge=0.0)
 
+    # -- when a conversation ends ---------------------------------------------
+    #
+    # The number of rounds is an outcome here, not a setting: a debate runs until
+    # the committee agrees, until it stops moving, or until the cap -- whichever
+    # comes first -- and *which* of those ended it is the measurement. Fixing the
+    # length in advance would have thrown that away.
+    #
+    # All three bounds are declared here, before the run, for the same reason
+    # `shift_threshold` is: chosen afterwards they would be chosen to produce an
+    # answer.
+
+    # Agreement: the widest gap between any two seats. Set from the first run's
+    # measured spreads rather than by taste. Only 13.6% of committees already
+    # satisfy it before saying a word, so nearly every committee genuinely
+    # debates; 30.7% reach it after one round, so it is achievable. A looser bar
+    # of 0.50 would have stopped 36.6% of committees before they spoke.
+    #
+    # It is also the same number as `shift_threshold`, and that is the point: a
+    # spread under it means no two agents differ by more than what this study
+    # calls changing your mind. They are inside each other's noise.
+    agreement_spread: float = Field(default=0.20, gt=0.0, le=2.0)
+
+    # Stillness: consecutive rounds in which no seat moved at all. Two rather than
+    # one deliberately -- an agent that ignored an argument on first reading may
+    # take it on the second, and stopping at the first quiet round would record
+    # that committee as entrenched without giving it the chance.
+    stillness_rounds: int = Field(default=2, ge=1, le=10)
+
+    # The cap. Every committee in the first run moved in round 1, so none settles
+    # immediately, and cost is linear in this number.
+    max_debate_rounds: int = Field(default=6, ge=1, le=20)
+
+    # How far back the placebo donor must come from, in trading sessions. The
+    # first run drew donors a median of 14 sessions back while agents look 60
+    # sessions back -- so a "different day" shared roughly 46 of its 60 bars with
+    # the day being decided, and the arm that was supposed to be inert was showing
+    # arguments about nearly the same data. At or above `lookback_days` the two
+    # windows cannot overlap at all.
+    placebo_min_gap_sessions: int = Field(default=60, ge=0)
+
     # -- generation -----------------------------------------------------------
 
     ollama_base_url: str = "http://localhost:11434"

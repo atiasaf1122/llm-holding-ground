@@ -40,15 +40,18 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from typing import Protocol
 
 from council.agents.prompt import PeerView, RenderedPrompt
+from council.config import get_settings
 from council.debate.compositions import Composition, Seat
 from council.debate.peers import NoPeersError, SeatView, peers_for, seated_views
 from council.debate.placebo import PlaceboPool, donor_views
 from council.domain.signal import Arm, FailureMode, Signal
 from council.evaluation.dispersion import Dispersion, is_contested
 from council.evaluation.frames import PointKey
+from council.evaluation.threshold import TOLERANCE, meets
 
 DEFAULT_REBUTTAL_ROUNDS = 1
 """Rounds after the opening one."""
@@ -139,6 +142,38 @@ class Turn:
         )
 
 
+class StopReason(StrEnum):
+    """Why a conversation ended.
+
+    Not bookkeeping -- this is a measurement. The number of rounds is an outcome
+    of the debate rather than a setting, and *which* condition ended it says
+    something the round count alone does not.
+    """
+
+    AGREED = "agreed"
+    """The seats came within :attr:`Settings.agreement_spread` of each other."""
+
+    SETTLED = "settled"
+    """Nobody moved for :attr:`Settings.stillness_rounds` consecutive rounds.
+
+    The interesting one for this study. A committee that stops without agreeing
+    has not converged: it has entrenched, every seat holding a position the others
+    argued against and none of them shifting. Two rounds rather than one because
+    an agent that ignored an argument on first reading may take it on the second,
+    and calling it entrenched after a single quiet round would deny it that.
+    """
+
+    CAP = "cap"
+    """The round limit was reached while the committee was still moving.
+
+    Not a failure. A conversation still in motion at the cap has no equilibrium
+    within the budget, and that is a result about the committee.
+    """
+
+    NO_SPEAKERS = "no_speakers"
+    """A whole round failed to generate, leaving the next with nothing to answer."""
+
+
 @dataclass(frozen=True, slots=True)
 class DebateTranscript:
     """One conversation, start to finish.
@@ -153,6 +188,12 @@ class DebateTranscript:
     decision_date: date
     ticker: str
     rounds: tuple[tuple[Turn, ...], ...]
+    stop_reason: StopReason = StopReason.CAP
+
+    @property
+    def rebuttal_rounds(self) -> int:
+        """Rounds after the opening. The headline outcome of a variable-length debate."""
+        return len(self.rounds) - 1
 
     @property
     def opening(self) -> tuple[Turn, ...]:
@@ -206,7 +247,10 @@ async def run_debate(
     placebo_pool: PlaceboPool | None = None,
     seed: int | None = None,
     dispersion_threshold: float | None = None,
-    rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
+    max_rounds: int | None = None,
+    agreement_spread: float | None = None,
+    stillness_rounds: int | None = None,
+    placebo_min_gap: int | None = None,
 ) -> DebateTranscript:
     """Run one committee through one decision point, in one arm.
 
@@ -225,18 +269,30 @@ async def run_debate(
         NoPeersError: if a whole round failed to generate, leaving the next round
             with nothing to react to.
     """
+    settings = get_settings()
+    cap = settings.max_debate_rounds if max_rounds is None else max_rounds
+    spread = settings.agreement_spread if agreement_spread is None else agreement_spread
+    stillness = settings.stillness_rounds if stillness_rounds is None else stillness_rounds
+
     _check_runnable(
         arm=arm,
         dispersion=dispersion,
-        rebuttal_rounds=rebuttal_rounds,
+        rebuttal_rounds=cap,
         threshold=dispersion_threshold,
     )
     point = (dispersion.decision_date, dispersion.ticker)
-    donor = (
-        donor_views(pool=placebo_pool, point=point, composition=composition, seed=seed)
-        if arm is Arm.DEBATE_PLACEBO
-        else None
-    )
+    if arm is Arm.DEBATE_PLACEBO:
+        # Drawn once here purely to fail fast: an unusable pool would otherwise
+        # cost a whole opening round before raising. The draw the debate uses is
+        # made per round, inside the loop.
+        donor_views(
+            pool=placebo_pool,
+            point=point,
+            composition=composition,
+            seed=seed,
+            round_index=1,
+            min_gap=placebo_min_gap,
+        )
 
     seats = composition.seats
     opening = await _take_round(
@@ -250,11 +306,29 @@ async def run_debate(
     _check_someone_spoke(opening, point=point)
 
     rounds = [opening]
-    for round_index in range(1, rebuttal_rounds + 1):
-        # The placebo arm keeps showing the donor's opening views in every round.
-        # It has nothing else to show -- the donor conversation's later rounds are
-        # replies to arguments these agents never saw.
-        views = donor if donor is not None else live_views(rounds[-1])
+    reason = StopReason.CAP
+    still_streak = 0
+
+    for round_index in range(1, cap + 1):
+        if arm is Arm.DEBATE_PLACEBO:
+            # A fresh donor each round. Repeating one frozen peer block would let
+            # the control reach stillness for a reason the treatment never faces --
+            # nothing new to answer -- and stillness is now a measurement.
+            views = donor_views(
+                pool=placebo_pool,
+                point=point,
+                composition=composition,
+                seed=seed,
+                round_index=round_index,
+                min_gap=placebo_min_gap,
+            )
+        else:
+            views = live_views(rounds[-1])
+
+        if not views:
+            reason = StopReason.NO_SPEAKERS
+            break
+
         rounds.append(
             await _take_round(
                 seats=seats,
@@ -266,13 +340,60 @@ async def run_debate(
             )
         )
 
+        if _agreed(rounds[-1], spread=spread):
+            reason = StopReason.AGREED
+            break
+
+        # Stillness is counted on consecutive quiet rounds, and the streak resets
+        # the moment anyone moves: a committee that goes quiet, is stirred by one
+        # seat, then goes quiet again has not been still for two rounds.
+        still_streak = still_streak + 1 if _nobody_moved(rounds[-2], rounds[-1]) else 0
+        if still_streak >= stillness:
+            reason = StopReason.SETTLED
+            break
+
     return DebateTranscript(
         composition=composition,
         arm=arm,
         decision_date=dispersion.decision_date,
         ticker=dispersion.ticker,
         rounds=tuple(rounds),
+        stop_reason=reason,
     )
+
+
+def _agreed(turns: Sequence[Turn], *, spread: float) -> bool:
+    """Whether every seat that spoke is within ``spread`` of every other.
+
+    A round in which fewer than two seats produced output cannot show agreement:
+    one surviving voice agrees with nobody, and treating it as consensus would end
+    conversations on a generation failure.
+    """
+    exposures = [view.exposure for turn in turns if (view := turn.view) is not None]
+    if len(exposures) < 2:
+        return False
+    return meets(spread, max(exposures) - min(exposures))
+
+
+def _nobody_moved(previous: Sequence[Turn], current: Sequence[Turn]) -> bool:
+    """Whether no seat's position changed between two rounds.
+
+    Any movement at all counts, not just movement past the shift threshold: the
+    question here is whether the conversation is still alive, and a seat inching
+    by 0.05 is still answering. A committee that oscillates by small amounts
+    therefore runs to the cap -- which is the honest reading of a debate that
+    never comes to rest, not a defect.
+
+    A seat that failed to generate is skipped rather than read as having moved to
+    flat; a phantom move would reset the streak and keep a dead conversation
+    running.
+    """
+    before = {turn.seat: view.exposure for turn in previous if (view := turn.view) is not None}
+    after = {turn.seat: view.exposure for turn in current if (view := turn.view) is not None}
+    shared = before.keys() & after.keys()
+    if not shared:
+        return False
+    return all(abs(before[seat] - after[seat]) <= TOLERANCE for seat in shared)
 
 
 def _check_runnable(

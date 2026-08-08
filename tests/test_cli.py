@@ -72,6 +72,11 @@ def _short_lookback(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     configuration no run can actually be given.
     """
     monkeypatch.setenv("COUNCIL_LOOKBACK_DAYS", "5")
+    # These tests run a handful of sessions to exercise the CLI wiring. The
+    # production placebo gap is a full lookback window and no donor here could
+    # meet it, so every placebo conversation would be abandoned and the commands
+    # under test would never reach the code they are checking.
+    monkeypatch.setenv("COUNCIL_PLACEBO_MIN_GAP_SESSIONS", "1")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

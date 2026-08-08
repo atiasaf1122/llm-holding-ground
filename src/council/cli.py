@@ -95,6 +95,8 @@ def settings_from(args: argparse.Namespace) -> Settings:
         overrides["cuda_visible_devices"] = args.device
     if args.data_dir is not None:
         overrides["data_dir"] = args.data_dir
+    if getattr(args, "placebo_min_gap", None) is not None:
+        overrides["placebo_min_gap_sessions"] = args.placebo_min_gap
     return Settings(**{**get_settings().model_dump(), **overrides})
 
 
@@ -112,6 +114,25 @@ def dryrun_settings(args: argparse.Namespace) -> Settings:
         updates["end"] = calendar[-1].date()
     if args.data_dir is None:
         updates["data_dir"] = settings.data_dir / DRYRUN_SUBDIR
+
+    # A dry run is a few dozen sessions, and the production placebo gap is a full
+    # lookback window -- no donor could satisfy it here, and every placebo
+    # conversation would be abandoned. Weakened rather than waived, and said out
+    # loud rather than left for a reader to infer from a suspiciously clean run:
+    # the placebo in a dry run is not the control the real arm gets, and a dry
+    # run's numbers were never results in the first place.
+    if settings.placebo_min_gap_sessions > 1:
+        # Unconditionally, and not on a calculation about the calendar: the pool a
+        # donor is drawn from holds only the *contested* points, which is a small
+        # and unpredictable fraction of the sessions. A dry run that guessed wrong
+        # would abandon every placebo conversation and still exit zero.
+        updates["placebo_min_gap_sessions"] = 1
+        _LOG.warning(
+            "dry run: placebo donor gap reduced from %d sessions to 1. Its calendar "
+            "cannot support the configured gap, so the placebo here is not the "
+            "control the real arm gets. Smoke test only, not a result.",
+            settings.placebo_min_gap_sessions,
+        )
     return settings.model_copy(update=updates)
 
 
@@ -307,6 +328,11 @@ def _with(args: argparse.Namespace, settings: Settings) -> argparse.Namespace:
             "start": settings.start,
             "end": settings.end,
             "data_dir": settings.data_dir,
+            # Carried like the rest: the steps rebuild settings from this
+            # namespace, so a value resolved here and not passed on is a value
+            # the later stages never see. The dry run's reduced gap was exactly
+            # that, and every placebo conversation in it was abandoned.
+            "placebo_min_gap": settings.placebo_min_gap_sessions,
         }
     )
 
@@ -348,6 +374,14 @@ def _common() -> argparse.ArgumentParser:
         "daemon keeps the devices it was started with",
     )
     parent.add_argument("--data-dir", type=Path, metavar="PATH")
+    parent.add_argument(
+        "--placebo-min-gap",
+        type=int,
+        metavar="SESSIONS",
+        help="how far back a placebo donor must come from. The default is a full "
+        "lookback window, so the donor's data cannot overlap the day being "
+        "decided; lowering it weakens the control",
+    )
     parent.add_argument(
         "--synthetic",
         action="store_true",

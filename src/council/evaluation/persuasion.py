@@ -32,6 +32,7 @@ from council.evaluation.frames import (
     debate_sort_key,
     frame_to_rows,
 )
+from council.evaluation.threshold import meets
 
 OPENING_ROUND = 0
 REBUTTAL_ROUND = 1
@@ -77,9 +78,12 @@ class Shift:
         """Whether the position moved far enough to count as changing its mind.
 
         Inclusive at the boundary, following config's wording that a move *of this
-        size* counts.
+        size* counts -- and compared through :func:`~council.evaluation.threshold.meets`
+        rather than with a bare ``>=``, because a bare comparison silently dropped
+        118 of the 273 exactly-at-the-bar movements in the first published run. That
+        module has the arithmetic.
         """
-        return self.distance >= self.threshold
+        return meets(self.distance, self.threshold)
 
     @property
     def reversed_sign(self) -> bool:

@@ -73,7 +73,15 @@ async def _run(
         caller=caller,
         placebo_pool=pool,
         seed=SEED,
-        rebuttal_rounds=rebuttal_rounds,
+        max_rounds=rebuttal_rounds,
+        stillness_rounds=rebuttal_rounds + 1,
+        # The fixtures hold a handful of sessions; the production gap of 60 cannot
+        # be met by a pool that size, and it is not what these tests are about.
+        placebo_min_gap=0,
+        # A negative bar can never be met, which is how a test that is about the
+        # round mechanics switches the early stops off. Leaving them on would make
+        # these assertions depend on whether the mock's seats happen to agree.
+        agreement_spread=-1.0,
     )
 
 
@@ -246,6 +254,7 @@ def test_the_placebo_never_draws_a_later_day() -> None:
     # Act
     drawn = {
         day: select_placebo_point(
+            min_gap=0,
             pool=pool, point=(day, TICKER), composition=composition.identifier, seed=SEED
         )
         for day in days[1:]
@@ -262,8 +271,9 @@ def test_a_pool_of_only_later_days_is_refused() -> None:
     pool = placebo_pool(composition, days=(date(2022, 6, 1), date(2022, 9, 1)))
 
     # Act & Assert
-    with pytest.raises(ValueError, match="no earlier date"):
+    with pytest.raises(ValueError, match=r"no earlier date|no session at least"):
         select_placebo_point(
+            min_gap=0,
             pool=pool, point=(DAY, TICKER), composition=composition.identifier, seed=SEED
         )
 
@@ -275,7 +285,7 @@ async def test_a_debate_whose_pool_is_all_later_days_never_runs() -> None:
     pool = placebo_pool(committee(), days=(date(2022, 6, 1),))
 
     # Act & Assert
-    with pytest.raises(ValueError, match="no earlier date"):
+    with pytest.raises(ValueError, match=r"no earlier date|no session at least"):
         await _run(Arm.DEBATE_PLACEBO, caller, pool=pool)
     assert caller.prompts == []
 
@@ -288,9 +298,11 @@ def test_the_placebo_draw_is_reproducible_under_a_fixed_seed() -> None:
 
     # Act
     first = select_placebo_point(
+            min_gap=0,
         pool=pool, point=point, composition=composition.identifier, seed=SEED
     )
     second = select_placebo_point(
+            min_gap=0,
         pool=pool, point=point, composition=composition.identifier, seed=SEED
     )
 
@@ -308,6 +320,7 @@ def test_a_different_seed_draws_a_different_donor() -> None:
     def draw_all(seed: int) -> tuple[tuple[date, str], ...]:
         return tuple(
             select_placebo_point(
+            min_gap=0,
                 pool=pool, point=(day, TICKER), composition=composition.identifier, seed=seed
             )
             for day in days[1:]
@@ -327,6 +340,7 @@ def test_two_committees_on_one_day_do_not_share_a_donor_by_construction() -> Non
     def draw_all(identifier: str) -> tuple[tuple[date, str], ...]:
         return tuple(
             select_placebo_point(
+            min_gap=0,
                 pool=pool, point=(day, TICKER), composition=identifier, seed=SEED
             )
             for day in days[1:]
@@ -343,8 +357,9 @@ def test_a_pool_holding_only_this_day_is_refused() -> None:
 
     # Act & Assert -- falling back to the day's own views would make the placebo
     # arm a second debate arm, and every stored row would still look correct.
-    with pytest.raises(ValueError, match="no earlier date"):
+    with pytest.raises(ValueError, match=r"no earlier date|no session at least"):
         select_placebo_point(
+            min_gap=0,
             pool=pool, point=(DAY, TICKER), composition=composition.identifier, seed=SEED
         )
 

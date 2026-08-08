@@ -254,7 +254,12 @@ class _Sweep:
                 placebo_pool=pool if arm is Arm.DEBATE_PLACEBO else None,
                 seed=self.settings.seed,
                 dispersion_threshold=self.threshold,
-                rebuttal_rounds=self.rebuttal_rounds,
+                max_rounds=self.rebuttal_rounds,
+                # From this sweep's settings rather than left to the module
+                # default, which reads the process-wide instance. A run
+                # configured with its own Settings must not have one bound
+                # silently read out from under it.
+                placebo_min_gap=self.settings.placebo_min_gap_sessions,
             )
         except NoPeersError as exhausted:
             _LOG.warning("abandoned %s in %s: %s", dispersion.point, arm, exhausted)
