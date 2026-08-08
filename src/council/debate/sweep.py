@@ -103,15 +103,28 @@ def placebo_pool_for(decisions: pd.DataFrame, *, composition: Composition) -> Pl
     return {point: tuple(views) for point, views in sorted(pool.items())}
 
 
-def has_donor(pool: PlaceboPool, point: PointKey) -> bool:
+def has_donor(pool: PlaceboPool, point: PointKey, *, min_gap: int = 0) -> bool:
     """Whether the pool holds a usable earlier day for this point.
 
-    Mirrors the filter in :func:`council.debate.placebo.select_placebo_point`, which
-    raises when it finds nothing. Asked in advance so that a point with no donor is
-    skipped before its opening round is generated, rather than after: an opening
-    round costs one call per seat and would be thrown away.
+    Asked in advance so that a point with no donor is skipped before its opening
+    round is generated rather than after: an opening round costs one call per seat
+    and would be thrown away.
+
+    It must apply **exactly** the test :func:`council.debate.placebo.select_placebo_point`
+    applies, minimum gap included. The two drifting apart is not a cosmetic
+    mismatch: this returns True, the sweep commits to the point, and the real draw
+    then raises a plain ``ValueError`` that ``except NoPeersError`` does not catch,
+    so the whole sweep exits and the current group's uncheckpointed rows are lost.
+    At the configured gap that was 118 of 138 points.
     """
-    return any(key[0] < point[0] and views for key, views in pool.items())
+    decision_date = point[0]
+    earlier = sorted({key[0] for key in pool if key[0] < decision_date})
+    if len(earlier) < min_gap:
+        return False
+    cutoff = earlier[-min_gap] if min_gap > 0 else decision_date
+    return any(
+        key[0] < decision_date and key[0] <= cutoff and views for key, views in pool.items()
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,7 +207,9 @@ class _Sweep:
             ):
                 report = report.merge(DebateReport(skipped=1))
                 continue
-            if arm is Arm.DEBATE_PLACEBO and not has_donor(pool, dispersion.point):
+            if arm is Arm.DEBATE_PLACEBO and not has_donor(
+                pool, dispersion.point, min_gap=self.settings.placebo_min_gap_sessions
+            ):
                 _LOG.warning(
                     "no placebo donor precedes %s for %s; skipped",
                     dispersion.point,

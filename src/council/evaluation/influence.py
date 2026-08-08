@@ -260,7 +260,12 @@ def _concessions_in(group: Sequence[Shift], limit: float) -> tuple[Concession, .
         # The side the asymmetry points at must have moved toward the other under its
         # own steam. Without this, an agent that stood still while its counterpart
         # stormed off would be recorded as having capitulated.
-        if travelled <= 0.0 or travelled < limit:
+        # `meets`, not a bare comparison -- the same defect as the asymmetry gate
+        # above, and missed when that one was fixed. This module has two bars and
+        # routing only one of them through the shared comparison left the second
+        # dropping every concession that travelled exactly the bar from the wrong
+        # side of the grid.
+        if travelled <= 0.0 or not meets(travelled, limit):
             continue
 
         found.append(
