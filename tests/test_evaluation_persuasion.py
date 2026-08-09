@@ -324,3 +324,48 @@ def test_a_rate_over_two_different_bars_refuses_rather_than_reporting_one_of_the
 
 def test_an_aggregate_with_no_records_has_no_bar_to_carry() -> None:
     assert shift_rate_by_confidence(()).threshold is None
+
+
+# -- the two denominators behind one rate ------------------------------------
+
+
+def test_a_band_carries_the_distinct_decision_points_behind_its_observations() -> None:
+    # `count` is the unit the statistic is declared over, and it is not a sample
+    # size: two seats answering one point is two observations of one point. Reported
+    # here rather than recounted by whichever reader wants it, so the CLI table,
+    # results.json and the dashboard cannot disagree about the denominator.
+    frame = frame_of(
+        *debate_pair(model="alpha", opening=0.0, closing=0.9, confidence=0.9),
+        *debate_pair(
+            model="beta", persona="reversion-bold", opening=0.0, closing=0.9, confidence=0.9
+        ),
+        *debate_pair(model="alpha", on=NEXT_DAY, opening=0.0, closing=0.9, confidence=0.9),
+    )
+
+    (band,) = [
+        entry
+        for entry in shift_rate_by_confidence(shifts(frame, threshold=THRESHOLD)).bands
+        if entry.count
+    ]
+
+    assert band.count == 3
+    assert band.point_count == 2
+
+
+def test_a_band_nobody_landed_in_counts_no_points() -> None:
+    frame = frame_of(*debate_pair(model="alpha", opening=0.0, closing=0.9, confidence=0.9))
+
+    bands = shift_rate_by_confidence(shifts(frame, threshold=THRESHOLD)).bands
+
+    assert [band.point_count for band in bands if band.count == 0] == [0, 0, 0, 0]
+
+
+def test_the_dashboard_no_longer_carries_its_own_copy_of_the_point_count() -> None:
+    from council.config import PROJECT_ROOT
+
+    tables = (PROJECT_ROOT / "src" / "council" / "app" / "tables.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "_points_by_band" not in tables
+    assert "band.point_count" in tables

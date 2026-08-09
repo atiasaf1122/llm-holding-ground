@@ -220,9 +220,17 @@ def run_backtest(
 def buy_and_hold(opens: pd.DataFrame) -> BacktestResult:
     """The baseline every result is reported against.
 
-    Fully invested in the equal-weight basket from the first period, never
-    trading, paying nothing. A committee that cannot beat this has not earned its
-    inference budget, and saying so plainly is worth more than omitting it.
+    The equal-weight basket bought at the **second** open and held to the end,
+    never trading again, paying nothing. Not the first open: the targets are
+    indexed on the calendar and :func:`run_ticker` shifts them by one, which is the
+    lookahead rule every arm obeys, so a target on the first session is filled at
+    the second. The basket is therefore flat over the first period and misses that
+    one open-to-open return -- and :attr:`PerformanceMetrics.time_in_market` reads
+    just under 1.0 for that reason. Obeying the same fill rule as the arms it is
+    compared against is worth more than the first period.
+
+    A committee that cannot beat this has not earned its inference budget, and
+    saying so plainly is worth more than omitting it.
     """
     always_long = pd.DataFrame(1.0, index=opens.index, columns=opens.columns)
     return run_backtest(

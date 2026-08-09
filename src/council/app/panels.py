@@ -119,17 +119,23 @@ def equity_panel(
 def _declaration_note(*, composition: str | None, rule_name: str) -> None:
     """Whether these curves are the declared comparison or a cut of it.
 
-    The pre-registered comparison names one aggregation rule and reads the
+    The declared comparison names one aggregation rule and reads the
     balanced design as one experiment. Either control moved off those values and
     the panel is exploratory -- which is worth stating on the panel rather than
     leaving to a reader to reconstruct from two sidebar widgets.
+
+    **Secondary**, not primary. The equity comparison and the shift rate are two
+    different quantities, and only one of them can decide the result; the primary
+    outcome is the shift rate on the next panel. Labelling both as the primary
+    declared one is the freedom a pre-registration exists to remove.
     """
     if composition is None and rule_name == PRIMARY_RULE:
         st.success(
-            f"{DECLARED} primary comparison: the committee after debate against the "
-            f"same committee before, under `{PRIMARY_RULE}` aggregation, pooled over "
-            "every committee in the balanced design, net of costs. This is the same "
-            "computation `python -m council evaluate` reports."
+            f"{DECLARED} secondary declared comparison: the committee after debate "
+            f"against the same committee before, under `{PRIMARY_RULE}` aggregation, "
+            "pooled over every committee in the balanced design, net of costs. The "
+            "primary outcome is the shift rate below. This is the same computation "
+            "`python -m council evaluate` reports."
         )
         return
     st.warning(
@@ -155,12 +161,17 @@ _RATE_TOOLTIP = alt.Tooltip("shift_rate:Q", format=".3f")
 def shift_panel(results: Results, settings: Settings, *, composition: str | None) -> None:
     st.header("Shift rate against prior confidence")
     st.success(
-        f"{DECLARED} primary statistic: the share of contested decision points at "
-        f"which an agent shifted by more than {settings.shift_threshold:.2f} exposure, "
-        "partitioned by the confidence it reported before seeing its peers."
+        f"{DECLARED} primary statistic: the share of agent-conversation observations "
+        "-- one agent, one committee, one contested point, one arm -- in which the "
+        f"agent's exposure shifted by at least {settings.shift_threshold:.2f} between "
+        "its opening and post-debate view, partitioned by the confidence it reported "
+        "before seeing its peers. Observations repeat across seats and committees and "
+        "are not independent, and pairs with a failed generation are excluded."
     )
     st.caption(
-        "The gap between debate and placebo is the finding: the placebo shows how "
+        "Reading the debate arm against the placebo is exploratory, not declared: "
+        "the declaration states a per-arm rate and registers no contrast and no "
+        "direction. The placebo shows how "
         "much movement contradiction alone buys -- read it against the coverage "
         "table below, which says whether the two arms answered the same points."
     )
@@ -188,10 +199,10 @@ def shift_panel(results: Results, settings: Settings, *, composition: str | None
     )
     st.altair_chart(chart, width="stretch")
     st.caption(
-        "`count` is observations and `points` is the distinct decision points "
-        "behind them: each point is answered once per seat of every committee, so "
-        "the observations are repeated rather than independent and `count` is not "
-        "the sample size the statistic is declared over. "
+        "`count` is observations -- the unit the statistic is declared over -- and "
+        "`points` is the distinct decision points behind them: each point is "
+        "answered once per seat of every committee, so the observations are "
+        "repeated rather than independent, and `points` is what says by how much. "
         + " ".join(
             f"{entry.arm}: {len(entry.records)} observations from {entry.points} "
             f"decision points."
@@ -361,7 +372,7 @@ def _transcript_header(transcript: Transcript) -> None:
     labels say which -- rather than leaving four numbers that look like one set.
     """
     columns = st.columns(4)
-    columns[0].metric("opening dispersion (all seats)", f"{transcript.opening_std:.2f}")
+    columns[0].metric("opening dispersion (this committee)", f"{transcript.opening_std:.2f}")
     columns[1].metric("committee before (speaking seats)", f"{transcript.opening_mean:+.2f}")
     columns[2].metric(
         "committee after (speaking seats)",

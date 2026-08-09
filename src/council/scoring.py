@@ -18,6 +18,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from statistics import fmean
 from typing import Final
 
@@ -40,6 +41,7 @@ from council.evaluation.frames import (
     ARM,
     NO_COMPOSITION,
     ROUND_INDEX,
+    AgentKey,
     DecisionRow,
     PointKey,
     forward_returns,
@@ -50,8 +52,10 @@ from council.evaluation.influence import InfluenceMatrix, influence_matrix
 from council.evaluation.persuasion import (
     OPENING_ROUND,
     ShiftRateReport,
+    failed_rows,
     shift_rate_by_confidence,
     shifts,
+    unpaired_rows,
 )
 from council.evaluation.windows import WindowComparison, compare_windows
 from council.planning import TREATMENT_ARMS
@@ -59,9 +63,10 @@ from council.planning import TREATMENT_ARMS
 _LOG = logging.getLogger(__name__)
 
 PRIMARY_RULE: Final = "mean"
-"""The aggregation the pre-registered comparison is stated in. The other rules in
-:data:`council.evaluation.aggregation.RULES` remain available and remain
-exploratory."""
+"""The aggregation the secondary declared (equity) comparison is stated in; the
+primary statistic is the shift rate and does not depend on the aggregation rule.
+The other rules in :data:`council.evaluation.aggregation.RULES` remain available
+and remain exploratory."""
 
 DEFAULT_WINDOW_COUNT: Final = 5
 """Windows the arms are compared over. Five is what
@@ -83,17 +88,46 @@ def committee_exposures(
     arm: Arm,
     round_index: int,
     rule: AggregationRule,
-) -> dict[PointKey, float]:
-    """One committee's aggregate exposure at each point it has a full view of.
+) -> tuple[dict[PointKey, float], frozenset[PointKey]]:
+    """One committee's aggregate exposure at each point it has a full view of, and
+    which points were dropped for want of a seat.
+
+    The points rather than their count, because :func:`arm_exposures` has a second
+    way of losing a point -- a committee absent from the arm entirely -- and the two
+    sets overlap. Returning a bare number left it no way to subtract them, so a
+    committee short of a seat at a point another committee completed was counted
+    twice and warned about as "absent from the arm entirely" while holding rows
+    there.
+
+    The set is returned rather than only logged. A drop is not neutral: in a
+    treatment arm the point falls back to the committee's *independent* exposure --
+    :func:`arm_exposures` starts every treatment series there and overwrites it -- so
+    a conversation that happened is scored as the control it was meant to be
+    compared against. That is a non-random pull towards the null, because round 1
+    exists in the treatments alone, and a ``logging.warning`` reaches neither
+    :class:`ExperimentResults`, nor ``results.json``, nor the CLI, nor the dashboard.
+
+    The full view is enforced rather than promised. A point is emitted only where
+    every seat of the committee has a row; a point short of one is dropped and
+    counted. The previous version grouped whatever rows matched and applied the
+    rule to them, so a committee missing a seat was aggregated over the survivors
+    and published under its own label -- a three-seat mean drawn as a four-seat
+    committee, with no warning and no exception. The independent sweep checkpoints
+    per (model, persona, ticker), so an interrupted generate leaves whole model
+    slices absent, and every committee of the balanced design seats every model
+    once: one missing model makes all eight short at once.
+    :func:`council.planning.plan_experiment` already refuses to count a contested
+    set from that state and ``CLAIMS`` C19 already forbids quoting rates from it;
+    this is the same refusal where the arithmetic happens.
 
     Failed rows are included, at the flat exposure they were stored with. That is
     what the committee would have held: an agent that produced nothing took no
     position, and dropping it instead would let a crashed generation quietly
-    reweight the committee towards the agents that survived.
+    reweight the committee towards the agents that survived. A failure is a row.
     """
     seats = {(seat.model, seat.persona.name) for seat in composition.seats}
     wanted = NO_COMPOSITION if arm is Arm.INDEPENDENT else composition.identifier
-    grouped: dict[PointKey, list[float]] = defaultdict(list)
+    grouped: dict[PointKey, dict[AgentKey, float]] = defaultdict(dict)
     for row in rows:
         if (
             row.arm == str(arm)
@@ -101,8 +135,22 @@ def committee_exposures(
             and row.composition == wanted
             and row.agent in seats
         ):
-            grouped[row.point].append(row.exposure)
-    return {point: rule(exposures) for point, exposures in sorted(grouped.items())}
+            grouped[row.point][row.agent] = row.exposure
+    complete = {
+        point: rule([held[seat] for seat in sorted(seats)])
+        for point, held in sorted(grouped.items())
+        if held.keys() == seats
+    }
+    dropped = frozenset(grouped) - frozenset(complete)
+    if dropped:
+        _LOG.warning(
+            "%s: %d point(s) dropped in the %s arm, short of the committee's %d seat(s)",
+            composition.identifier,
+            len(dropped),
+            arm,
+            len(seats),
+        )
+    return complete, dropped
 
 
 def arm_exposures(
@@ -112,8 +160,9 @@ def arm_exposures(
     arm: Arm,
     rule: AggregationRule,
     rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
-) -> dict[PointKey, float]:
-    """One exposure per decision point for one arm, averaged over the committees.
+) -> tuple[dict[PointKey, float], int]:
+    """One exposure per decision point for one arm, averaged over the committees,
+    and the (committee, point) pairs this arm lost to a short committee.
 
     A debate arm only ran where the agents disagreed, so its series starts as the
     committee's independent view and is overwritten at the contested points by the
@@ -124,29 +173,69 @@ def arm_exposures(
 
     The committees are then averaged equally, which is the eight-configuration
     design being read as one experiment rather than as eight.
+
+    The second return value counts the **treatment** call's drops only. The
+    fallback above is argued for uncontested days, where no conversation happened;
+    a point this arm debated and then lost for want of one seat's post-debate row
+    is scored as the control instead, and that is the number a reader has to be
+    able to see. The independent call's drops are not this arm's: they are the
+    control's own coverage, and every arm inherits them identically.
+
+    Two stages rather than one, because :func:`committee_exposures` can only count
+    what it was handed. Its ``dropped`` is ``len(grouped) - len(complete)``, so a
+    committee that produced *no* row at all for this arm at a point has an empty
+    ``grouped`` and is counted as having lost nothing -- while the point still falls
+    back to that committee's independent view. That is what an interrupted ``debate``
+    leaves, since the sweep checkpoints per (committee, arm, ticker): a whole
+    committee absent from a treatment arm pulls the treatment towards the control
+    with the counter reading zero. So the debated maps are collected first, and a
+    point that any committee debated but this one did not is counted here.
     """
     pooled: dict[PointKey, list[float]] = defaultdict(list)
+    short = 0
+    debated_by: dict[str, dict[PointKey, float]] = {}
+    dropped_by: dict[str, frozenset[PointKey]] = {}
+    if arm is not Arm.INDEPENDENT:
+        for composition in compositions:
+            debated, dropped = committee_exposures(
+                rows,
+                composition=composition,
+                arm=arm,
+                round_index=rebuttal_rounds,
+                rule=rule,
+            )
+            debated_by[composition.identifier] = debated
+            dropped_by[composition.identifier] = dropped
+        debated_any: set[PointKey] = set().union(*(held.keys() for held in debated_by.values()))
+        for composition in compositions:
+            # The two stages overlap. A point this committee has rows for but is
+            # short a seat at is in `lost`, and it is also missing from this
+            # committee's *complete* map -- so subtracting `lost` is what stops it
+            # being counted a second time and reported as a point the committee
+            # never touched.
+            lost = dropped_by[composition.identifier]
+            absent = debated_any - debated_by[composition.identifier].keys() - lost
+            if absent:
+                _LOG.warning(
+                    "%s: %d point(s) absent from the %s arm entirely, so they are "
+                    "scored as the control",
+                    composition.identifier,
+                    len(absent),
+                    arm,
+                )
+            short += len(lost | absent)
     for composition in compositions:
-        series = committee_exposures(
+        series, _ = committee_exposures(
             rows,
             composition=composition,
             arm=Arm.INDEPENDENT,
             round_index=OPENING_ROUND,
             rule=rule,
         )
-        if arm is not Arm.INDEPENDENT:
-            series.update(
-                committee_exposures(
-                    rows,
-                    composition=composition,
-                    arm=arm,
-                    round_index=rebuttal_rounds,
-                    rule=rule,
-                )
-            )
+        series.update(debated_by.get(composition.identifier, {}))
         for point, exposure in series.items():
             pooled[point].append(exposure)
-    return {point: fmean(values) for point, values in sorted(pooled.items())}
+    return {point: fmean(values) for point, values in sorted(pooled.items())}, short
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,7 +271,19 @@ def score_arm(
         arm=str(arm),
         metrics=metrics,
         baseline=_random_committee(
-            arm=arm, exposures=exposures, opens=opens, settings=settings, metrics=metrics
+            arm=arm,
+            exposures=exposures,
+            opens=opens,
+            settings=settings,
+            # Per ticker, off the backtest that has just run. `metrics.turnover` is
+            # a mean across the basket, and the null realises turnover per column,
+            # so one scalar matches each column to the basket average rather than
+            # to its own ticker's rate -- and the reachability check then runs per
+            # ticker against the wrong number, which can drop the whole baseline.
+            turnover_per_period={
+                ticker.ticker: ticker.turnover / len(ticker.position)
+                for ticker in result.per_ticker
+            },
         ),
         net_return=result.net_return,
         point_count=len(exposures),
@@ -195,7 +296,7 @@ def _random_committee(
     exposures: Mapping[PointKey, float],
     opens: pd.DataFrame,
     settings: Settings,
-    metrics: PerformanceMetrics,
+    turnover_per_period: Mapping[str, float],
 ) -> PerformanceMetrics | None:
     """The turnover-matched null, or ``None`` when the arm cannot be matched.
 
@@ -211,7 +312,7 @@ def _random_committee(
         targets = random_arm_targets(
             exposures=exposures,
             opens=opens,
-            turnover_per_period=metrics.turnover_per_period,
+            turnover_per_period=turnover_per_period,
             rebalance_threshold=settings.rebalance_threshold,
             seed=settings.seed,
         )
@@ -235,7 +336,7 @@ def _random_committee(
 class ExperimentResults:
     """Everything one run has to say, in one object.
 
-    Keyed by arm throughout, so the pre-registered comparison -- the debate arm
+    Keyed by arm throughout, so the secondary declared comparison -- the debate arm
     against the independent arm -- is a lookup rather than a reconstruction, and so
     the two controls that make it mean anything sit in the same object as the
     number they qualify.
@@ -252,6 +353,87 @@ class ExperimentResults:
     contested_points: int
     decision_count: int
 
+    calendar_start: date
+    calendar_end: date
+    session_count: int
+    """Which calendar this artefact scored, on the artefact.
+
+    Provenance rather than a measurement: the dates are already in hand inside
+    :func:`evaluate_experiment` as the opens frame's index. Every published run so
+    far used a six-month window that was never chosen against a two-year configured
+    range, and the object meant to be the record of the run could not have shown it
+    -- it carried ``decision_count``, ``contested_points`` and per-arm ``periods``,
+    and no field naming either end of the period they were counted over.
+
+    This is the **price** file's range, and it is only half of the answer. See
+    :attr:`decision_start`."""
+
+    decision_start: date | None
+    decision_end: date | None
+    decision_date_count: int
+    """Which dates decisions were actually made on.
+
+    The calendar above is the opens frame's index, so it catches a short run only
+    when the *prices* are short. A run whose prices span the configured range but
+    whose decisions cover a fraction of it -- the state an interrupted ``generate``
+    leaves, which ``evaluate`` does not refuse -- publishes a calendar most of which
+    holds no decision, and every backtest period before the first decision is flat
+    in every arm. Naming both spans is what makes that visible on the artefact
+    rather than only in the parquet.
+
+    ``None`` at either end only where the frame holds no row, which
+    :func:`evaluate_experiment` refuses before reaching here; the type says so
+    rather than inventing a date for a run that decided nothing."""
+
+    debated_points: Mapping[str, int]
+    """Distinct decision points each treatment arm actually held a conversation on.
+
+    :attr:`ArmOutcome.point_count` cannot say this: it counts the exposure series
+    *after* :func:`arm_exposures` has filled the uncontested days from the
+    committee's independent view, so it is identical for every arm by construction.
+    The placebo drops every contested point with no usable earlier donor -- a
+    non-random filter that removes the earliest points of the calendar from one arm
+    only -- and this is the field a reader checks that caveat against.
+    :func:`council.app.tables.coverage_note` reports the same gap on the dashboard.
+
+    Counted off the arm's stored rows, the way ``app.tables._coverage_row`` counts
+    it, rather than off the pairs the shift rate is computed from: those drop every
+    pair containing a failed generation, so a conversation that was held and then
+    crashed would read here as a point the arm never covered.
+    """
+
+    dropped_pairs: Mapping[str, int]
+    """Round pairs each arm lost to a failed generation, per
+    :func:`council.evaluation.persuasion.failed_rows`.
+
+    On the surface most likely to be quoted, because the drop is not random across
+    the arms: round 1 exists only in the debate arms, so a crashed round 1 reads as
+    an agent walking away from its opening view and every phantom shift lands on
+    the treatment. ``failed_rows`` exists so that a rate computed over what is left
+    of a run whose generations mostly crashed cannot be read as a rate over the
+    run, and it was wired only to the dashboard.
+    """
+
+    short_committee_points: Mapping[str, int]
+    """(committee, point) pairs each treatment arm lost to a committee short of a
+    seat -- or absent from the arm entirely -- per :func:`arm_exposures`.
+
+    Beside :attr:`dropped_pairs` because it is the same kind of hazard and worse
+    behaved. A dropped pair leaves the rate's denominator; a short committee leaves
+    the *exposure series*, and what fills the hole is that committee's independent
+    view -- so the point is scored as the control the arm is being compared against.
+    The drop is non-random across the arms for the usual reason: round 1 exists in
+    the treatments alone. It was announced by a ``logging.warning`` and by nothing
+    else, so a run could publish a treatment pulled towards the null with no column
+    saying how far.
+    """
+
+    unpaired: Mapping[str, int]
+    """Rows each arm produced with no partner round, per
+    :func:`council.evaluation.persuasion.unpaired_rows`. The other half of the
+    denominator's provenance: a conversation abandoned after its opening round
+    leaves a row that no shift was computed from."""
+
     def arm(self, arm: Arm | str) -> ArmOutcome:
         for outcome in self.arms:
             if outcome.arm == str(arm):
@@ -267,7 +449,7 @@ def evaluate_experiment(
     compositions: Sequence[Composition] | None = None,
     rule_name: str = PRIMARY_RULE,
     window_count: int = DEFAULT_WINDOW_COUNT,
-    rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
+    rebuttal_rounds: int | None = None,
 ) -> ExperimentResults:
     """Score every arm and answer every question the run was built to ask.
 
@@ -278,41 +460,122 @@ def evaluate_experiment(
     ones. One results object reporting a shift rate under the caller's bar and an
     influence matrix under the environment's would be two definitions of "changed
     its mind" in a table read as one.
+
+    Only the treatment arms the frame holds a **post-debate** row for are scored.
+    Scoring an arm without one is not a null: :func:`arm_exposures` fills every
+    uncontested point from the committee's independent view and overwrites it at
+    ``round_index == rebuttal_rounds``, so an arm with nothing at that index comes
+    out an exact copy of the control -- published as a clean null for the
+    secondary declared comparison. Presence alone does not settle it, and testing
+    presence left the more reachable route open: :meth:`council.debate.sweep._Sweep.hold`
+    stores the rows of an abandoned conversation and the protocol stops after the
+    opening round when a whole round fails to generate, so an arm run during an
+    outage stores round-0 rows only. :func:`council.app.curves.arms_in` restricts
+    the same way, so the dashboard and the CLI agree about which *treatment* arms a
+    run holds. They do not agree about the control: ``arms_in`` simply omits an
+    absent independent arm, and this function refuses the frame outright, because a
+    control is what the secondary declared comparison is stated against.
+
+    Args:
+        rebuttal_rounds: defaults to ``settings.max_debate_rounds``, the same
+            resolution :func:`council.debate.sweep.run_debate_arms` makes, so
+            raising the cap changes plan, run and score together.
+
+    Raises:
+        ValueError: if the frame holds no independent-arm row. The control was
+            prepended unconditionally while only the treatments were restricted to
+            what the frame holds, so a frame of debate rows alone published a
+            control that never ran: :func:`arm_exposures` returned nothing for it,
+            :func:`score_arm` backtested an empty target frame, and the
+            secondary declared comparison was scored against a flat line. ``if not
+            any(exposures.values())`` does not fire, because the treatment
+            exposures are not empty.
+        ValueError: if the frame is empty, or if no stored decision was made by a
+            seat of the configured committees. The second is the ordinary
+            consequence of evaluating with a ``--models`` list that does not match
+            what was generated: every arm backtests flat, the shift and calibration
+            tables populate from the frame regardless, and the artefact would mix a
+            vacuous equity comparison with real behavioural numbers with nothing
+            marking the difference. :func:`council.app.curves.build_curves` already
+            refuses exactly this case.
     """
     if decisions.empty:
         raise ValueError("no decisions have been generated; run the independent arm first")
+    if rebuttal_rounds is None:
+        rebuttal_rounds = settings.max_debate_rounds
     committees = tuple(
         balanced_design(models=settings.agent_models) if compositions is None else compositions
     )
     rows = frame_to_rows(decisions)
-    opens = opens_frame(prices, tickers=list(settings.tickers))
+    # The dates decisions were made on, which is not the price file's range. An
+    # interrupted `generate` leaves the two spans wide apart and `evaluate` does not
+    # refuse it, so both go on the artefact.
+    decision_dates = sorted({row.decision_date for row in rows})
+    # The tickers the decisions cover, not the configured universe, matching
+    # `council.app.artefacts.load_results`. The equal-weight basket and
+    # `buy_and_hold` are built from whatever columns they are handed, so a
+    # configured ticker the run never decided on dilutes every arm's return,
+    # drawdown, turnover and time-in-market by the ratio of the two counts -- and
+    # measures the floor an arm has to beat over a universe the committee was never
+    # asked about. That is the ordinary state after an interrupted `generate`, which
+    # sweeps model then persona then ticker.
+    covered = sorted({row.ticker for row in rows})
+    absent = [ticker for ticker in settings.tickers if ticker not in covered]
+    if absent:
+        _LOG.warning(
+            "no decision covers %s; scoring the basket over %s instead of the "
+            "configured universe",
+            ", ".join(absent),
+            ", ".join(covered),
+        )
+    opens = opens_frame(prices, tickers=covered)
     returns = forward_returns_lookup(forward_returns(opens))
     rule = RULES[rule_name]
 
-    outcomes = tuple(
-        score_arm(
-            arm=arm,
-            exposures=arm_exposures(
-                rows,
-                compositions=committees,
-                arm=arm,
-                rule=rule,
-                rebuttal_rounds=rebuttal_rounds,
-            ),
-            opens=opens,
-            settings=settings,
+    present = {row.arm for row in rows}
+    if str(Arm.INDEPENDENT) not in present:
+        raise ValueError(
+            "the frame holds no independent-arm row; the secondary declared comparison "
+            "is against the control, and an absent control backtests flat and "
+            "publishes as a clean null. The run holds " + ", ".join(sorted(present))
         )
-        for arm in (Arm.INDEPENDENT, *TREATMENT_ARMS)
+    post_debate = {row.arm for row in rows if row.round_index == rebuttal_rounds}
+    treatments = tuple(arm for arm in TREATMENT_ARMS if str(arm) in post_debate)
+    scored = {
+        arm: arm_exposures(
+            rows,
+            compositions=committees,
+            arm=arm,
+            rule=rule,
+            rebuttal_rounds=rebuttal_rounds,
+        )
+        for arm in (Arm.INDEPENDENT, *treatments)
+    }
+    exposures = {arm: series for arm, (series, _) in scored.items()}
+    short_committees = {str(arm): dropped for arm, (_, dropped) in scored.items()}
+    if not any(exposures.values()):
+        raise ValueError(
+            "no stored decision was made by a seat of "
+            + ", ".join(table.identifier for table in committees)
+            + "; the run holds the models "
+            + ", ".join(sorted({row.model for row in rows}))
+        )
+
+    outcomes = tuple(
+        score_arm(arm=arm, exposures=exposures[arm], opens=opens, settings=settings)
+        for arm in (Arm.INDEPENDENT, *treatments)
     )
     control = rows_in_arm(decisions, Arm.INDEPENDENT)
     reports = _arm_reports(
         decisions=decisions,
         outcomes=outcomes,
+        treatments=treatments,
         returns=returns,
         control=control,
         settings=settings,
         window_count=window_count,
         rebuttal_rounds=rebuttal_rounds,
+        short_committees=short_committees,
     )
     return ExperimentResults(
         aggregation_rule=rule_name,
@@ -327,48 +590,97 @@ def evaluate_experiment(
             contested_points(control, threshold=settings.dispersion_threshold)
         ),
         decision_count=len(decisions),
+        calendar_start=opens.index[0].date(),
+        calendar_end=opens.index[-1].date(),
+        session_count=len(opens.index),
+        decision_start=decision_dates[0] if decision_dates else None,
+        decision_end=decision_dates[-1] if decision_dates else None,
+        decision_date_count=len(decision_dates),
+        debated_points=reports.debated_points,
+        dropped_pairs=reports.dropped_pairs,
+        short_committee_points=reports.short_committee_points,
+        unpaired=reports.unpaired,
     )
 
 
 @dataclass(frozen=True, slots=True)
 class _Reports:
-    """The four per-arm tables, kept together because they are read together."""
+    """The per-arm tables, kept together because they are read together."""
 
     shift_rates: Mapping[str, ShiftRateReport]
     calibration: Mapping[str, CalibrationReport]
     influence: Mapping[str, InfluenceMatrix]
     windows: Mapping[str, WindowComparison]
+    debated_points: Mapping[str, int]
+    dropped_pairs: Mapping[str, int]
+    short_committee_points: Mapping[str, int]
+    unpaired: Mapping[str, int]
 
 
 def _arm_reports(
     *,
     decisions: pd.DataFrame,
     outcomes: Sequence[ArmOutcome],
+    treatments: Sequence[Arm],
     returns: Mapping[PointKey, float],
     control: pd.DataFrame,
     settings: Settings,
     window_count: int,
     rebuttal_rounds: int,
+    short_committees: Mapping[str, int],
 ) -> _Reports:
     """Build the per-arm tables in one pass, so they cannot fall out of step.
 
     Window count is clamped to the periods available. A short run -- a dry run over
     a few weeks of synthetic prices -- has fewer periods than windows, and
     :func:`council.evaluation.windows.split_windows` refuses that rather than
-    inventing empty ones; clamping is how the dry run still reports something.
+    inventing empty ones; clamping is how the dry run still reports something. The
+    clamp is logged rather than applied in silence: the report prints "x of N
+    windows" using the clamped N, and a reader who asked for more is entitled to
+    know the figure is not the one they asked for. A value below one is refused at
+    the command line instead -- see :func:`council.cli.window_count`.
     """
     shift_rates: dict[str, ShiftRateReport] = {}
     calibration: dict[str, CalibrationReport] = {str(Arm.INDEPENDENT): calibrate(control, returns)}
     influence: dict[str, InfluenceMatrix] = {}
     windows: dict[str, WindowComparison] = {}
+    debated_points: dict[str, int] = {}
+    dropped_pairs: dict[str, int] = {}
+    short_committee_points: dict[str, int] = {}
+    unpaired: dict[str, int] = {}
     control_return = outcomes[0].net_return
 
-    for outcome, arm in zip(outcomes[1:], TREATMENT_ARMS, strict=True):
+    used_windows = max(1, min(window_count, int(control_return.size)))
+    if used_windows != window_count:
+        _LOG.warning(
+            "%d window(s) requested but the run holds %d period(s); comparing over %d",
+            window_count,
+            int(control_return.size),
+            used_windows,
+        )
+
+    for outcome, arm in zip(outcomes[1:], treatments, strict=True):
         frame = rows_in_arm(decisions, arm)
         name = str(arm)
-        shift_rates[name] = shift_rate_by_confidence(
-            shifts(frame, threshold=settings.shift_threshold)
-        )
+        records = shifts(frame, threshold=settings.shift_threshold)
+        shift_rates[name] = shift_rate_by_confidence(records)
+        # The points this arm actually debated, taken off its stored rows rather
+        # than off the exposure series, which has been filled to the full calendar
+        # and is the same length for every arm. Off the rows rather than off
+        # `records`: `shifts` drops every pair containing a failed generation, so a
+        # point whose conversation was held but whose rounds crashed would vanish
+        # and read as a coverage gap. `app.tables._coverage_row` counts the same
+        # thing the same way, so the CLI, the artefact and the dashboard agree.
+        debated_points[name] = len({row.point for row in frame_to_rows(frame)})
+        # What the rate's denominator lost, threaded the same way. `failed_rows`
+        # returns both rounds of every dropped pair, so the pair count is half of
+        # it; `unpaired_rows` returns rows that never had a partner at all.
+        dropped_pairs[name] = len(failed_rows(frame)) // 2
+        unpaired[name] = len(unpaired_rows(frame))
+        # What the *exposure series* lost, from `arm_exposures`' own count rather
+        # than recomputed here: a second definition of "short of a seat" would put
+        # two numbers under one name in one artefact.
+        short_committee_points[name] = short_committees.get(name, 0)
         calibration[name] = calibrate(frame.loc[frame[ROUND_INDEX] == rebuttal_rounds], returns)
         # The same bar the shift table above was built with. Left to default, the
         # matrix would resolve its own from the process-wide settings, and one
@@ -377,14 +689,16 @@ def _arm_reports(
             frame, arm=name, min_concession=settings.shift_threshold
         )
         windows[name] = compare_windows(
-            outcome.net_return,
-            control_return,
-            window_count=max(1, min(window_count, int(control_return.size))),
+            outcome.net_return, control_return, window_count=used_windows
         )
     return _Reports(
         shift_rates=shift_rates,
         calibration=calibration,
         influence=influence,
         windows=windows,
+        debated_points=debated_points,
+        dropped_pairs=dropped_pairs,
+        short_committee_points=short_committee_points,
+        unpaired=unpaired,
     )
 

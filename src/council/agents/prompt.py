@@ -232,8 +232,23 @@ def build_prompt(
 
 
 def _check_peers(arm: Arm, peers: Sequence[PeerView], round_index: int) -> None:
+    """All four ways the arm, the round and the peers can contradict each other.
+
+    Two of them were guarded and two were not, and the unguarded pair is the more
+    damaging. A debate arm rendering peers into round 0 destroys the paired
+    baseline the primary statistic is measured from -- that round is the control
+    question put to a committee and is guaranteed to render byte-identically to
+    the control's -- and it leaves no trace beyond a ``prompt_hash`` nothing
+    compares. An independent row past round 0 is the control claiming a second
+    round it does not have. Neither is reachable today, which is the reason to
+    pin them rather than to rely on it.
+    """
     if arm is Arm.INDEPENDENT and peers:
         raise ValueError("the independent arm is the control and shows no peers")
+    if arm is Arm.INDEPENDENT and round_index > 0:
+        raise ValueError("the independent arm has one round")
+    if arm in DEBATE_ARMS and round_index == 0 and peers:
+        raise ValueError(f"{arm} opens with the control question and shows no peers")
     if arm in DEBATE_ARMS and round_index > 0 and not peers:
         raise ValueError(f"{arm} needs at least one peer view after the opening round")
 

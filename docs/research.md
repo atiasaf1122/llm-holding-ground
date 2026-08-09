@@ -75,13 +75,16 @@ observation, and only one of them is persuasion.
 |---|---|---|
 | **independent** | nothing | the control |
 | **debate** | peers' rationales **and** exposures | the treatment |
-| **rationale only** | rationales, **no numbers** | **anchoring** |
-| **placebo** | rationales **from an unrelated day** | **compliance** |
+| **rationale only** | rationales, **with the peer's stated exposure removed** | **anchoring on a peer's stated position** |
+| **placebo** | rationales **from an unrelated day** (and possibly another instrument) | **compliance** |
 
 **Anchoring.** Agent A says +0.8, agent B says -0.2, both end at +0.3. Did they
 convince each other, or did they split the difference because a number was on the
 page? Humans do the latter constantly and models inherit it. Showing the rationale
 without the number separates them: whatever convergence survives is reasoning.
+**Only the structured position field is withheld.** A figure a peer wrote into its
+own prose -- its own position restated, a percentage move it quotes -- reaches the
+reader unchanged, so this arm bounds anchoring rather than isolating it.
 
 **Compliance.** This is the one that decides what the study means. If an agent moves
 just as far when the counter-argument is about something else entirely, then it is
@@ -89,9 +92,15 @@ not being persuaded -- it is yielding to the *fact* of contradiction. The headli
 number would then have to be described completely differently.
 
 **Collapsing any arm into another destroys the inference**, which is why the arm is
-part of the stored schema rather than a flag applied at analysis time, and why the
-peer rendering is one code path with the arm as its only input -- so a difference
-between arms cannot come from anything else.
+part of the stored schema and why the peer rendering is one code path. One difference
+survives it: the placebo needs a donor at least `placebo_min_gap_sessions` back, so
+the arms do not cover the same points -- the first 60 decision dates in either case:
+60 of 461 dates (120 of 922 points) at the configured range, and 60 of 70 dates
+(120 of 140 contested points) on the six-month slice.
+`council.app.tables.coverage_note` reports the gap; any debate-minus-placebo
+difference must be read against it. The draw also constrains only the date and not
+the ticker, so debate-minus-placebo differences instrument identity along with day
+relevance.
 
 The probe already produced a hint that this matters: one model abandoned a correct
 answer *more* often against an irrelevant argument than a pertinent one. At that
@@ -110,7 +119,8 @@ The arithmetic that kills it:
 ```
 256 configurations x 8 calls per debate x 1,000 decision points
     = 2,048,000 inferences
-    ~ one to two weeks of continuous compute
+    ~ 8.9 days at council.planning.SECONDS_PER_INFERENCE = 1.5 s with four models
+      resident (the parallelism StagePlan.seconds applies)
 ```
 
 And most of it is redundant. Two configurations differing only in which of two
@@ -134,7 +144,9 @@ bought for.
 Plus four **uniform references** -- every seat holding the same persona -- to see
 what a homogeneous committee does.
 
-**Eight configurations. One thirty-second of the compute. The same questions.**
+**Eight configurations, one thirty-second of the compute -- model and persona main
+effects separated, at the cost of the interaction between particular pairings, which
+this study does not ask about.**
 
 The square is generated arithmetically and its balance property is asserted by a
 test, because a hand-written table with one typo silently destroys the design while
@@ -155,12 +167,33 @@ matrix would then measure reputation rather than argument.
 
 **One round.** An opening view, everyone reads everyone, a final view. Enough to
 answer *were you moved*; more rounds answer *did you converge*, which is a different
-question and can be added without redesign.
+question. The protocol in `debate/protocol.py` can end a conversation on agreement or
+on stillness as well as on a cap, but every shipped path pins the cap at one rebuttal
+round (`config.max_debate_rounds = 1`, `protocol.DEFAULT_REBUTTAL_ROUNDS = 1`), so
+that is the protocol that runs. Raising it now raises rather than being ignored:
+`debate.sweep.run_debate_arms` refuses any other value and names every consumer that
+has to be taught variable length first -- the resume check, `scoring.arm_exposures`'
+fixed round index, `scoring._arm_reports`' calibration read at that same index,
+`evaluation.persuasion`'s round-1 limit, `app.transcripts.read_transcripts`' round-1
+limit, `app.curves.arms_in`, which qualifies a treatment arm on the literal round 1
+rather than on the run's cap, and `app.panels._rounds_in`, which offers rounds 0 and
+1 only.
 
 **Only where there is disagreement.** On a point where the agents already agree, a
 conversation cannot change the committee's decision. This was expected to be the
 main compute saving; on the first configuration the contested share came out at
 **100%**, so it saved nothing. The mechanism is still right and stays in.
+
+**The gate is measured on the pooled grid, not on the committee.**
+`pipeline.select_contested` measures dispersion once, over the whole independent arm
+pooled across every model and every persona, and `debate.sweep.run_debate_arms` applies
+that single list unchanged to all eight committees. So 100% is the share for the pooled
+grid, not for the committee that actually holds the conversation — and the sentence above
+justifies the gate per committee. Recomputed per committee on the superseded two-model
+run, the share is **449 of 1,120, 40%**: rotations 56, 125, 70 and 123 of 140, uniforms
+3, 11, 30 and 31 of 140. At the unit the justification is stated in, the gate is not
+vacuous. Whether it saves anything at that unit has never been measured, because the
+sweep has never been run per committee.
 
 ---
 
@@ -260,14 +293,15 @@ there, leakage was not driving it.
 
 ## 9. Why the numbers will be small, and saying so first
 
-Two years is roughly ten independent six-month windows. **That is enough to detect a
-large effect and nothing else.**
+Two years is four non-overlapping six-month windows, and the shipped comparison cuts
+the period into `council.scoring.DEFAULT_WINDOW_COUNT = 5` windows of roughly 4.8
+months. **That is enough to detect a large effect and nothing else.**
 
 The design does one thing that helps: it compares a committee to **itself** on the
 same days, so whatever the market did cancels between the two sides and only the
 difference is estimated. A paired comparison of this kind is far sharper than
-comparing two strategies' returns. But the effective sample is still about ten
-observations, and "8 of 10 windows" sits right at the edge of what could happen by
+comparing two strategies' returns. But the effective sample is still about five
+observations, and "4 of 5 windows" sits right at the edge of what could happen by
 chance.
 
 Hence the framing in the README, decided before any result existed:

@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from council.app import artefacts
 from council.app.artefacts import (
     ARM_ORDER,
     MissingArtefactsError,
@@ -22,6 +23,7 @@ from council.app.artefacts import (
     require_columns,
 )
 from council.data.prices import synthetic_prices
+from council.domain.signal import Arm
 from helpers_app import COMMITTEE, frame_of, independent, stored
 
 
@@ -194,3 +196,22 @@ def test_the_declared_scope_returns_the_run_unchanged() -> None:
     results = Results(decisions=frame_of(independent(), stored()), opens=pd.DataFrame())
 
     assert results.scoped_to(None) is results
+
+
+def _arm_order_doc() -> str:
+    """ARM_ORDER's attribute docstring, read from the source.
+
+    A ``Final`` tuple carries no ``__doc__`` at runtime, so the prose has to be read
+    off the module the way a next engineer reads it.
+    """
+    source = Path(artefacts.__file__).read_text(encoding="utf-8")
+    return source.split("ARM_ORDER: Final", 1)[1].split('"""')[1]
+
+
+def test_the_arm_order_docstring_does_not_claim_an_adjacency_the_enum_has_not() -> None:
+    # It justified the declared order by saying the debate arm and its placebo sit
+    # next to each other, so a reader would not have to hunt across a table for the
+    # gap that is the finding. `Arm` declares independent, debate, rationale-only,
+    # placebo, so they do not.
+    assert ARM_ORDER.index(str(Arm.DEBATE_PLACEBO)) - ARM_ORDER.index(str(Arm.DEBATE)) != 1
+    assert "next to each other" not in _arm_order_doc()

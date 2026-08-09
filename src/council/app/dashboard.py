@@ -167,8 +167,9 @@ def results_panels(results: Results, settings: Settings) -> None:
         "aggregation", RULE_NAMES, index=RULE_NAMES.index(PRIMARY_RULE)
     )
     st.sidebar.caption(
-        f"The primary comparison is declared over `{PRIMARY_RULE}`. The other "
-        "rules are exploratory."
+        f"The secondary declared (equity) comparison is stated over `{PRIMARY_RULE}`; "
+        "the primary statistic does not depend on the rule. The other rules are "
+        "exploratory."
     )
     if rule_name is None:
         return

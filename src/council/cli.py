@@ -34,7 +34,13 @@ import pandas as pd
 
 from council.agents.mock import MockProvider
 from council.agents.provider import Provider, ProviderError
-from council.agents.runner import ProviderFactory, ollama_factory, pin_device
+from council.agents.runner import (
+    GenerationRunner,
+    ProviderFactory,
+    ollama_factory,
+    pin_device,
+)
+from council.agents.store import DecisionStore
 from council.config import Settings, get_settings
 from council.data.prices import write_prices
 from council.debate.sweep import run_debate_arms
@@ -70,6 +76,25 @@ DRYRUN_SESSIONS: Final = 90
 warm-up and leave real decisions behind it, short enough to finish in seconds."""
 
 _LOG = logging.getLogger("council")
+
+
+def window_count(value: str) -> int:
+    """``--windows``, refused below one rather than silently clamped up to it.
+
+    :func:`council.scoring._arm_reports` clamps the count into the periods the run
+    actually holds, which is what lets a short dry run report anything at all. That
+    clamp also turned ``--windows 0`` and ``--windows -5`` into one window with no
+    complaint, and the report then printed "x of 1 windows" as though one had been
+    asked for. A count below one is not a short run, it is a typo, so it is refused
+    at the boundary; the downward clamp stays where it is and now logs.
+    """
+    try:
+        count = int(value)
+    except ValueError as not_an_int:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer") from not_an_int
+    if count < 1:
+        raise argparse.ArgumentTypeError(f"--windows must be at least 1, not {count}")
+    return count
 
 
 # -- settings ---------------------------------------------------------------------
@@ -227,6 +252,7 @@ def do_debate(args: argparse.Namespace, out: TextIO) -> int:
     decisions = stored_decisions(store)
     if decisions.empty:
         raise ValueError("no decisions are stored; run `generate` before `debate`")
+    _refuse_a_half_swept_control(settings, prices, store)
 
     contested = select_contested(decisions, settings=settings)
     print(f"{len(contested)} contested point(s) to debate", file=out)
@@ -247,6 +273,34 @@ def do_debate(args: argparse.Namespace, out: TextIO) -> int:
     )
     print(f"generated {report.generated} rows, {report.failures} failed", file=out)
     return _generation_exit(report.generated, report.failures)
+
+
+def _refuse_a_half_swept_control(
+    settings: Settings, prices: pd.DataFrame, store: DecisionStore
+) -> None:
+    """Refuse to pick a contested set from a control arm that has not finished.
+
+    :func:`council.planning.plan_experiment` already discards a contested set
+    measured over an unfinished control -- "a measurement of the half rather than a
+    sample" -- and falls back to the assumed share. This command measured the same
+    set from the same store with no such check and then committed the GPU to it.
+
+    Dispersion is computed over whichever agents exist, and the independent sweep
+    runs model, then persona, then ticker, so an interruption leaves a slice rather
+    than a sample: :func:`~council.evaluation.dispersion.is_contested` rests on a
+    directional split, and a slice missing the reversion personas collapses it. The
+    debate arm would then be run over a non-randomly selected subset of the
+    calendar -- and at the extreme the command prints "0 contested point(s) to
+    debate", generates nothing and exits 0, which is what a finished run looks like.
+    """
+    run_plan = GenerationRunner(settings=settings, prices=prices, store=store).plan()
+    if run_plan.remaining > 0:
+        raise ValueError(
+            f"the control arm is unfinished: {run_plan.remaining} of {run_plan.total} "
+            "inference(s) remain. A contested set measured over a half-swept control "
+            "measures the half, and the sweep runs model then persona then ticker, so "
+            "what is missing is a slice rather than a sample. Finish `generate` first"
+        )
 
 
 def do_evaluate(args: argparse.Namespace, out: TextIO) -> int:
@@ -464,7 +518,7 @@ def build_parser() -> argparse.ArgumentParser:
         command = subcommands.add_parser(name, parents=[common], help=description)
         command.add_argument("--out", type=Path, metavar="PATH", help="where results.json goes")
         command.add_argument("--rule", default=PRIMARY_RULE, choices=sorted(RULES))
-        command.add_argument("--windows", type=int, default=DEFAULT_WINDOW_COUNT)
+        command.add_argument("--windows", type=window_count, default=DEFAULT_WINDOW_COUNT)
         command.set_defaults(handler=handler)
     return parser
 

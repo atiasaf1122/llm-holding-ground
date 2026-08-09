@@ -126,6 +126,11 @@ async def generate_decision(
         round_index=point.round_index,
     )
     started = time.perf_counter()
+    # Bound before the try so the except branch can read it. A `ValidationError`
+    # fires *after* the request returned, so the requests it cost are on the
+    # completion rather than on the error, and reading only the error stores zero
+    # retries for a well-formed object that is not a signal.
+    completion: Completion | None = None
     try:
         completion = await provider.generate(
             system=rendered.system,
@@ -138,7 +143,19 @@ async def generate_decision(
         raise
     except (ProviderError, ValidationError) as error:
         elapsed = time.perf_counter() - started
-        decision = _failed_decision(point, rendered, error, seed=seed, now=now, latency=elapsed)
+        retries = getattr(error, "retries", None)
+        if retries is None:
+            retries = completion.retries if completion is not None else 0
+        decision = _failed_decision(
+            point,
+            rendered,
+            error,
+            seed=seed,
+            now=now,
+            latency=elapsed,
+            retries=retries,
+            output_tokens=completion.output_tokens if completion is not None else 0,
+        )
         return decision, _record(point, rendered, error=_describe(error), latency=elapsed)
 
     return (
@@ -189,6 +206,8 @@ def _failed_decision(
     seed: int,
     now: datetime,
     latency: float,
+    retries: int,
+    output_tokens: int,
 ) -> Decision:
     """A decision point that produced nothing, written down as such.
 
@@ -196,6 +215,20 @@ def _failed_decision(
     rather than as a position; ``failure`` is what stops it being read afterwards
     as an agent that deliberately went flat -- which, in a debate round, would read
     as an agent that abandoned its opening view.
+
+    Args:
+        retries: resolved by the caller, which is the only place both the error and
+            the completion are in scope. Passed rather than read off the error here,
+            because the rows that cost retries are exactly the rows that reach this
+            function: a row recording an unreachable daemon consumed
+            ``max_retries + 1`` requests, and a well-formed object that is not a
+            signal cost whatever the request that returned it cost.
+        output_tokens: resolved by the caller for the same reason ``retries`` is:
+            the row that cost tokens is the row that reaches this function. A
+            ``ValidationError`` fires after the request returned, so the tokens are
+            on the completion; left to :class:`Decision`'s default of zero, a
+            per-model cost tally read off the parquet under-counts exactly the
+            models that over-ran their schema.
     """
     return Decision(
         decision_date=point.decision_date,
@@ -212,7 +245,9 @@ def _failed_decision(
         seed=seed,
         generated_at=now,
         failure=failure_mode(error),
+        retries=retries,
         latency_seconds=latency,
+        output_tokens=output_tokens,
     )
 
 

@@ -288,6 +288,29 @@ class DecisionStore:
             keys.update(_keys_of(answered))
         return frozenset(keys)
 
+    def stored_prompts(self) -> dict[DecisionKey, str]:
+        """Every stored decision's identity beside the digest of the text it answered.
+
+        :meth:`completed_keys` cannot answer this. Its identity is
+        :data:`KEY_COLUMNS`, and nothing in there *defines the prompt*: not
+        ``lookback_days``, not the persona file's contents, not the price series. A
+        run resumed onto a directory generated under different prompt-defining
+        settings therefore reports every existing row as already stored and writes
+        one arm holding two different treatments. ``prompt_hash`` is the column that
+        can tell, so it is read back out and compared -- see
+        :func:`council.agents.runner.check_prompt_provenance`.
+
+        Failed rows are included. Their hash is the prompt that was sent, which is
+        exactly what a provenance check asks about, whatever came back.
+        """
+        prompts: dict[DecisionKey, str] = {}
+        for path in self._sources():
+            frame = pd.read_parquet(path, columns=[*KEY_COLUMNS, "prompt_hash"])
+            prompts.update(
+                zip(_keys_of(frame), (str(value) for value in frame["prompt_hash"]), strict=True)
+            )
+        return prompts
+
     def checkpoint(
         self,
         *,

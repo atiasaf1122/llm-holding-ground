@@ -92,5 +92,8 @@ def test_the_real_readme_still_carries_both_declared_passages() -> None:
     preregistration = read_preregistration(PROJECT_ROOT / "README.md")
 
     assert "confident agent is contradicted" in preregistration.question
-    assert "Primary comparison" in preregistration.primary_comparison
+    # The statistic is the primary outcome; the equity comparison is declared
+    # beside it as the secondary one, and the section carries both.
+    assert "Primary statistic" in preregistration.primary_comparison
+    assert "Secondary declared outcome" in preregistration.primary_comparison
     assert "0.20" in preregistration.primary_comparison

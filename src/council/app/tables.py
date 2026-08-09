@@ -19,7 +19,7 @@ import pandas as pd
 
 from council.app.artefacts import order_arms
 from council.domain.signal import Arm
-from council.evaluation.buckets import DEFAULT_EDGES, Band, band_index, make_bands
+from council.evaluation.buckets import DEFAULT_EDGES, Band
 from council.evaluation.calibration import CalibrationReport
 from council.evaluation.frames import (
     ARM,
@@ -131,28 +131,17 @@ def shift_reports(
     }
 
 
-def _points_by_band(
-    records: Sequence[Shift], *, edges: Sequence[float] = DEFAULT_EDGES
-) -> tuple[int, ...]:
-    """Distinct decision points behind each band, in the bands' own order."""
-    bands = make_bands(edges)
-    seen: list[set[PointKey]] = [set() for _ in bands]
-    for record in records:
-        index = band_index(bands, record.prior_confidence)
-        if index is not None:
-            seen[index].add((record.decision_date, record.ticker))
-    return tuple(len(points) for points in seen)
-
-
-def shift_rate_table(
-    reports: Mapping[str, ArmShifts], *, edges: Sequence[float] = DEFAULT_EDGES
-) -> pd.DataFrame:
+def shift_rate_table(reports: Mapping[str, ArmShifts]) -> pd.DataFrame:
     """One row per arm per confidence band, in the order the reports were built.
 
     ``count`` is observations and ``points`` is the distinct decision points
     behind them; see :class:`ArmShifts` for why both are shown. The rate is
     ``count``-based, as the statistic is defined, but the two columns together
     say how far from independent those observations are.
+
+    Both columns come off :class:`~council.evaluation.persuasion.ConfidenceShiftRate`
+    rather than being recounted here, so this panel, ``results.json`` and the CLI
+    table cannot disagree about the denominator behind one rate.
     """
     return pd.DataFrame(
         [
@@ -161,7 +150,7 @@ def shift_rate_table(
                 "band": band.band.label,
                 "confidence": _midpoint(band.band),
                 "count": band.count,
-                "points": points,
+                "points": band.point_count,
                 "shifted_count": band.shifted_count,
                 "reversed_count": band.reversed_count,
                 "shift_rate": band.shift_rate,
@@ -169,9 +158,7 @@ def shift_rate_table(
                 "mean_distance": band.mean_distance,
             }
             for arm, entry in reports.items()
-            for band, points in zip(
-                entry.report.bands, _points_by_band(entry.records, edges=edges), strict=True
-            )
+            for band in entry.report.bands
         ]
     )
 

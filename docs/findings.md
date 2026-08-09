@@ -146,9 +146,44 @@ contested points was expected to cut the compute budget substantially. **At a 10
 contested share it saves nothing.** The mechanism is right and stays in; the saving
 did not materialise on this configuration.
 
+### What the 100% is a share *of*
+
+The figure above is measured over the **pooled independent arm** — every model crossed
+with every persona, eight agents at each point — because that is what
+`pipeline.select_contested` does: it measures dispersion once and
+`debate.sweep.run_debate_arms` applies the resulting list unchanged to all eight
+committees. **It is not the share for the committee that debates**, which is the unit the
+gate is justified in ("on a point where the agents already agree, a conversation cannot
+change *the committee's* decision").
+
+Recomputed per committee on the same run:
+
+| committee | contested | of |
+|---|---|---|
+| rotation-0 | 56 | 140 |
+| rotation-1 | 125 | 140 |
+| rotation-2 | 70 | 140 |
+| rotation-3 | 123 | 140 |
+| uniform-momentum-cautious | 3 | 140 |
+| uniform-momentum-bold | 11 | 140 |
+| uniform-reversion-cautious | 30 | 140 |
+| uniform-reversion-bold | 31 | 140 |
+| **total** | **449** | **1,120** |
+
+**449 of 1,120 — 40%, not 100%.** The uniform references are the reason: four copies of one persona
+looking at one series rarely split on direction. So at the committee level the gate is not
+vacuous, and the saving may well be real — it has simply never been measured, because the
+sweep has never selected per committee. That is a statement about what was measured, not a
+new result.
+
 ---
 
 ## 3. Cost, planned and measured
+
+**Superseded in full. The artefacts this section was written from are superseded; only
+`docs/results/superseded/run-2models/` survives. The run
+covered a six-month window that was never chosen, against the two-year run at daily
+decision frequency declared in the README. No number here may be quoted as current.**
 
 `plan` reports a configuration's inference budget without running it, and marks the
 debate figures **estimated** until the independent arm exists -- the contested share
@@ -222,17 +257,23 @@ cautious 0.19–0.39 in absolute exposure).
 
 ### What the corrected check actually found
 
-**Every model separates strongly on a rising series and barely at all on a falling
-one.** On a -19% drift the stance axis is worth roughly 0.03 to 0.30; on a +22%
-drift it is worth 1.06 to 1.20 -- forty times more in the extreme case.
+**On this screen all four models separated stance far more on the rising windows than
+on the falling ones.** On a -19% drift the stance axis is worth between -0.20 and +0.30
+-- it runs backwards for phi4 -- while on a +22% drift it is worth 1.06 to 1.20. Against
+the widest positive falling value, 0.30, that is four times; against the smallest, 0.03,
+forty.
 
-The reading is that **none of these models will go long into a drawdown**, whatever
-persona it is wearing. A reversion reader is supposed to buy a 19% fall; they will
-not. They will chase a rise but they will not catch a falling knife.
+The sample is what limits the reading. Sixteen calls per model, over **two** falling
+windows and two rising ones, drawn from a single synthetic geometric random walk
+rather than from market regimes. That supports a **hypothesis** -- that these models
+are reluctant to go long into a drawdown whatever persona they wear, so a reversion
+reader supposed to buy a 19% fall may not -- and it does not demonstrate it. Two
+windows per model cannot carry "every model", "none" or "whatever persona".
 
-That is a limitation of the study, not a bug in the harness: **disagreement, and
-therefore everything measured here, is concentrated in rising markets.** A period
-that fell throughout would produce far less of it.
+Read the same way, the consequence for the study is a hypothesis too: **disagreement,
+and therefore everything measured here, may be concentrated in rising markets**, and
+a period that fell throughout would then produce far less of it. That is a reason to
+check, not a finding.
 
 ### phi4 is kept despite being the weakest
 
@@ -247,6 +288,11 @@ models but not for phi4, that is more interesting than a clean sweep.
 ---
 
 ## 5. The main experiment
+
+**Superseded in full. The artefacts this section was written from are superseded; only
+`docs/results/superseded/run-2models/` survives. The run
+covered a six-month window that was never chosen, against the two-year run at daily
+decision frequency declared in the README. No number here may be quoted as current.**
 
 14,496 decisions. Two models, four personas, eight committees, 3,344 debates, zero
 generation failures. Six months of synthetic prices, temperature 0.
@@ -266,7 +312,7 @@ never enters that comparison. That is the result below.
 | 0.60 – 0.80 | 0.248 (1590) | **0.243** (1567) | 0.221 (1586) |
 | 0.80 – 1.00 | 0.407 (123) | **0.374** (123) | 0.311 (122) |
 
-*Recomputed from `docs/results/run-2models/decisions.parquet` with the shipped
+*Recomputed from `docs/results/superseded/run-2models/decisions.parquet` with the shipped
 comparison. The rates first published here were produced by the bare
 `distance >= threshold` that `cbf6a55` replaced with `evaluation.threshold.meets`;
 the counts in brackets are unchanged, so this is the same data read against the
@@ -352,14 +398,19 @@ the donor gap now has to hold for the control to mean anything.
 > The placebo sign flips, so the two conditions no longer agree and the argument the
 > conclusion rested on is gone. It is withdrawn rather than replaced.
 
-### And the reversal against the probe
+### The reversal against the probe — withdrawn
 
-On the factual probe, **qwen3 held better** than gemma4. In the market arms,
-**qwen3 yields more.** Same two models, opposite ordering.
-
-That is the fact-versus-judgement distinction, observed rather than argued:
-**defending a verifiable answer and defending an opinion are not the same
-behaviour**, and a benchmark that measures the first predicts the second poorly.
+> **Withdrawn. See [`CLAIMS.md`](CLAIMS.md) D7.** This read the probe as ordering the
+> two models — *qwen3 held better* — and the market arms as reversing that order, and
+> concluded that defending a verifiable answer and defending an opinion are different
+> behaviours. Both halves fail on the artefact. In the probe **both models capitulated
+> exactly once** (qwen3:8b 1 of 22, gemma4 1 of 21); the rates 0.045 and 0.048 differ
+> only because the denominators do, so the probe does not order them at all — and this
+> document already says of a one-trial gap in the same table that "it is not evidence
+> of anything". In the market arms the ordering reverses in the placebo: net
+> concessions are gemma4 **+3** in debate and **+56** in rationale-only against
+> **-3** in the placebo, which is the disagreement D4 cites when withdrawing Finding
+> 4. No fact-versus-judgement conclusion is drawn here.
 
 ### What would strengthen this
 

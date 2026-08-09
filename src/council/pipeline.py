@@ -55,6 +55,15 @@ def load_or_synthesise_prices(
     so a dry run and a real run share one calendar and one warm-up, and a bug that
     only appears at the boundary of the date range appears in both.
 
+    **A persisted file wins over the generator.** Once ``prices_path`` exists, this
+    returns what is on disk even under ``--synthetic``. It used to synthesise a
+    fresh frame every time and write only when the file was absent, so the frame in
+    memory and the frame on disk could differ -- and they did, the moment the date
+    range moved: the backtest fills at ``open`` and
+    :func:`council.app.artefacts.load_results` reads prices off disk, so
+    ``evaluate --synthetic`` and the dashboard scored the same decisions against
+    different fill prices, with no error and a plausible curve.
+
     Args:
         persist: write a synthesised frame to ``settings.prices_path`` when no
             price file is there yet. The dashboard reads its prices off disk, so a
@@ -62,18 +71,46 @@ def load_or_synthesise_prices(
             can be scored against -- an offline rehearsal whose artefacts the
             dashboard rejects. Only when absent: ``--synthetic`` says which prices
             this run uses, not which downloaded history to overwrite.
+
+    Raises:
+        ValueError: if a persisted synthetic file does not cover
+            ``[settings.start, settings.end]``. Widening the range against an
+            existing file is the case that has to fail loudly: the sessions the run
+            wants are not there, and regenerating them into memory is what produced
+            two different price tables under one run.
     """
     if not synthetic:
         return load_prices(settings.prices_path)
+    if settings.prices_path.is_file():
+        stored = load_prices(settings.prices_path)
+        _check_covers_range(stored, settings)
+        return stored
     frame = synthetic_prices(
         tickers=settings.tickers,
         start=settings.start,
         sessions=len(pd.bdate_range(start=settings.start, end=settings.end)),
         seed=settings.seed,
     )
-    if persist and not settings.prices_path.is_file():
+    if persist:
         write_prices(frame, settings.prices_path)
     return frame
+
+
+def _check_covers_range(stored: pd.DataFrame, settings: Settings) -> None:
+    """Refuse a persisted price file that is short of the configured calendar."""
+    wanted = pd.DatetimeIndex(pd.bdate_range(start=settings.start, end=settings.end))
+    held = pd.DatetimeIndex(sorted(set(pd.to_datetime(stored["date"]))))
+    missing = wanted.difference(held)
+    if len(missing) == 0:
+        return
+    raise ValueError(
+        f"{settings.prices_path} holds {len(held)} session(s) from "
+        f"{held[0].date()} to {held[-1].date()} and does not cover the configured "
+        f"{len(wanted)} session(s) from {settings.start} to {settings.end}; "
+        f"{len(missing)} are missing, first {missing[0].date()}. Synthetic prices "
+        "are not regenerated over a file that already exists, because the stored "
+        "decisions were made against the file; delete it to start a new run"
+    )
 
 
 def open_store(settings: Settings) -> DecisionStore:

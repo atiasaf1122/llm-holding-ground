@@ -264,3 +264,46 @@ def test_the_table_puts_each_seats_opening_view_beside_its_final_one() -> None:
     assert table["model"].tolist() == ["alpha", "beta"]
     assert table["opening_exposure"].tolist() == [-0.5, 0.5]
     assert table["final_exposure"].tolist() == [0.4, 0.5]
+
+
+# -- the header's dispersion is not the gate ---------------------------------
+
+
+def test_the_opening_spread_is_not_the_dispersion_that_admitted_the_point() -> None:
+    # `Transcript.opening_std` covers one committee's seats in one arm at round 0.
+    # `pipeline.select_contested` gates on the spread over the *whole* independent
+    # arm, every model at every persona -- so a uniform committee can open at zero
+    # spread on a point admitted there by a directional split.
+    from council.evaluation.dispersion import dispersion_by_point
+
+    uniform = frame_of(
+        *turns(model="alpha", opening=0.5, final=0.5),
+        *turns(model="beta", opening=0.5, final=0.5),
+    )
+    control = frame_of(
+        independent(model="alpha", persona="momentum-bold", ticker=TICKER, exposure=0.8),
+        independent(model="alpha", persona="reversion-bold", ticker=TICKER, exposure=-0.8),
+        independent(model="beta", persona="momentum-bold", ticker=TICKER, exposure=0.6),
+        independent(model="beta", persona="reversion-bold", ticker=TICKER, exposure=-0.6),
+    )
+
+    transcript = read_transcripts(uniform)[0]
+    gate = dispersion_by_point(control)[0]
+
+    assert transcript.opening_std == 0.0
+    assert transcript.is_split is False
+    assert gate.is_split is True
+    assert gate.exposure_std > 0.0
+
+
+def test_the_docstring_does_not_call_it_the_quantity_that_gated_the_point() -> None:
+    from council.config import PROJECT_ROOT
+
+    module = (PROJECT_ROOT / "src" / "council" / "app" / "transcripts.py").read_text(
+        encoding="utf-8"
+    )
+    field = module.split("opening_std: float")[1].split("is_split: bool")[0]
+
+    assert "the quantity that decided the point was worth debating" not in field
+    assert "It is not the dispersion that gated the point" in field
+    assert "select_contested" in field

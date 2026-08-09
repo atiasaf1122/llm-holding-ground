@@ -3,9 +3,14 @@
 Assigning each of four models one of the four personas freely gives ``4 ** 4 =
 256`` committees. Each committee costs two rounds of generation per seat at each
 decision point -- 8 calls -- and the first run has on the order of 1,000 decision
-points, so the full grid is ``256 * 8 * 1000 = 2,048,000`` calls. At a second
-apiece that is over three weeks of continuous generation, on a card this project
-has already promised not to monopolise. It is also mostly redundant: the great
+points, so the full grid is ``256 * 8 * 1000 = 2,048,000`` calls **per arm**, and
+``6,144,000`` across the three treatment arms
+:data:`council.planning.TREATMENT_ARMS` names. At
+:data:`council.planning.SECONDS_PER_INFERENCE` with four models resident -- the
+parallelism :meth:`council.planning.StagePlan.seconds` applies -- that is about
+twenty-seven
+days of continuous generation, on a card this project has already promised not to
+monopolise. It is also mostly redundant: the great
 majority of those 256 committees differ from another only in which model happens
 to be wearing which persona.
 
@@ -23,11 +28,16 @@ like a Latin square and silently answers a different question.
 persona. Without them, a difference between rotations cannot be attributed to the
 *mixture* rather than to the personas themselves.
 
-Eight configurations, ``8 * 8 * 1000 = 64,000`` calls, and every question the grid
-existed to answer is still asked: whether a persona travels across base models,
-and whether a mixed committee behaves differently from a uniform one. What is
-given up is the interaction between *particular* pairings -- whether this model
-argues differently against that one -- which this study does not ask about.
+Eight configurations, ``8 * 8 * 1000 = 64,000`` calls **per arm** -- and the sweep
+runs three treatment arms (:data:`council.planning.TREATMENT_ARMS`), so eight
+committees cost ``8 * 4 * 2 * 3 = 192`` calls per contested point, about 192,000 at
+1,000 contested points. The 256-versus-8 ratio above is unaffected: both sides of it
+are per-arm figures.
+
+Every question the grid existed to answer is still asked: whether a persona travels
+across base models, and whether a mixed committee behaves differently from a uniform
+one. What is given up is the interaction between *particular* pairings -- whether this
+model argues differently against that one -- which this study does not ask about.
 
 Identifiers are stable only for a fixed model ordering, exactly as the persona
 order is fixed in :mod:`council.domain.persona`. Reordering
@@ -145,7 +155,13 @@ def balanced_design(
 def _resolve_models(models: Sequence[str] | None) -> tuple[str, ...]:
     resolved = tuple(get_settings().agent_models if models is None else models)
     if not resolved:
-        raise ValueError("a committee needs at least one model")
+        raise ValueError("a committee needs models")
+    if len(resolved) < 2:
+        raise ValueError(
+            f"a debate needs at least two seats; {resolved} gives one. A one-seat "
+            "committee generates an opening round and is then abandoned by "
+            "debate.protocol._check_someone_spoke at every decision point."
+        )
     # A repeated model name would seat one model twice in a rotation and break the
     # balance property the design is built on -- and the two seats would be
     # indistinguishable in the stored rows, since a row is keyed by model and

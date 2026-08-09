@@ -1,10 +1,12 @@
 """How far apart the agents are at a decision point.
 
-This runs *before* generation, not after. It decides which days are worth debating,
-which is most of the compute budget -- but it is also the experiment's first
-checkpoint. If the agents barely disagree anywhere, there is nothing for a debate
-to change and the headline question has no data behind it. Better to learn that
-from the independent arm in an afternoon than from a finished run.
+This runs *before* generation, not after. It decides which days are worth debating
+-- what skipping them saves has never been measured at the committee level; on the
+pooled grid the contested share was 100%, so it saved nothing. It is also the
+experiment's first checkpoint. If the agents barely disagree anywhere, there is
+nothing for a debate to change and the headline question has no data behind it.
+Better to learn that from the independent arm in an afternoon than from a finished
+run.
 """
 
 from __future__ import annotations

@@ -75,6 +75,26 @@ def make_runner(
     )
 
 
+def test_a_repeated_model_is_refused_before_it_doubles_the_generation_sweep(
+    tmp_path: Path,
+) -> None:
+    # `GenerationRunner` iterates `agent_models` as given and reads the `done`
+    # snapshot taken before the loop, so a repeat runs the whole grid twice with
+    # nothing skipped, and `RunPlan.total` counts the duplicate as a second model.
+    # `debate.compositions._resolve_models` then refuses the identical
+    # configuration, so the cheap stage rejects what the overnight stage doubled --
+    # and `opens_frame` already guards the exact analogue for `tickers`.
+    with pytest.raises(ValueError, match="duplicate model"):
+        Settings(
+            tickers=TICKERS,
+            agent_models=("m1", "m1"),
+            start=START,
+            end=date(2022, 12, 31),
+            lookback_days=LOOKBACK,
+            data_dir=tmp_path,
+        )
+
+
 # -- the calendar and the contexts ---------------------------------------------
 
 
@@ -289,6 +309,34 @@ async def test_a_second_run_of_the_same_configuration_generates_nothing(
     assert report.generated == 0
     assert report.skipped == report.plan.total
     assert settings.decisions_path.read_bytes() == before
+
+
+async def test_a_resume_under_a_different_lookback_refuses_instead_of_mixing_arms(
+    settings: Settings, prices: pd.DataFrame
+) -> None:
+    # The resume identity is KEY_COLUMNS, and nothing in it defines the prompt. A
+    # run resumed onto a directory generated under a different lookback reported
+    # every existing row as already stored, generated only the newly reachable
+    # dates, and wrote one arm holding two different treatments -- exiting 0.
+    await make_runner(settings, prices, RecordingFactory()).run()
+    shortened = settings.model_copy(update={"lookback_days": LOOKBACK - 2})
+
+    factory = RecordingFactory()
+    with pytest.raises(ValueError, match="prompt-defining configuration"):
+        await make_runner(shortened, prices, factory).run()
+
+    assert factory.total_calls == 0
+
+
+async def test_a_resume_of_the_configuration_that_wrote_the_rows_is_allowed(
+    settings: Settings, prices: pd.DataFrame
+) -> None:
+    # The guard above must not fire on the ordinary case it sits in front of.
+    await make_runner(settings, prices, RecordingFactory()).run()
+
+    report = await make_runner(settings, prices, RecordingFactory()).run()
+
+    assert report.generated == 0
 
 
 async def test_a_night_lost_to_an_unreachable_backend_is_run_again(

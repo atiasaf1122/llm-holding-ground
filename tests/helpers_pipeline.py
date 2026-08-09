@@ -33,7 +33,15 @@ from helpers_runner import RecordingFactory
 
 MODELS: tuple[str, ...] = ("alpha", "beta")
 TICKERS: tuple[str, ...] = ("AAA", "BBB")
-SESSIONS = 24
+SESSIONS = 30
+"""Long enough that some arms get a turnover-matched random baseline and some do
+not, so both branches of :func:`council.scoring._random_committee` are exercised.
+
+The mock answers from a digest of the prompt, so which arms are matchable is
+reshuffled by any edit to a persona brief. At 24 sessions -- the length these
+fixtures ran at before the momentum stance paragraph was rewritten -- no arm was
+matchable at all, and the test that asserts a matched null exists had nothing left
+to assert."""
 LOOKBACK = 5
 START = date(2022, 1, 3)
 END = date(2022, 12, 31)

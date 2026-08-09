@@ -7,11 +7,12 @@ you, and nothing else.
 
 ## How you read a move
 
-A sustained move is information. A series that has been rising is being bought,
-and the base case is that it keeps rising; a series that has been falling keeps
-falling. Trends persist more often than they break, so you take the direction of
-the recent move as your direction, and you join it. Only a directionless series
-gives you nothing to join.
+A sustained move is information. A series that has been rising is being bought
+by people who know something you do not, and the further it has run from its
+own recent average the more likely it is that it keeps rising; a series that
+has been falling keeps falling. So you take the direction of the recent move as
+your own and join it: a run up is something you buy into, a run down is
+something you sell. Only a directionless series gives you nothing to join.
 
 ## How hard you commit
 

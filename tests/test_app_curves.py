@@ -58,25 +58,35 @@ def one_committee() -> Composition:
 
 
 def committee_rows(
-    *, opening: float, final: float, arm: str = "debate", on: date = DAY
+    *,
+    opening: float,
+    final: float,
+    arm: str = "debate",
+    on: date = DAY,
+    table: Composition | None = None,
 ) -> tuple[dict[str, object], ...]:
     """One round pair per seat of the named committee."""
+    seated = one_committee() if table is None else table
     return tuple(
         stored(
             arm=arm,
             on=on,
             model=seat.model,
             persona=seat.persona.name,
+            composition=seated.identifier,
             round_index=round_index,
             exposure=exposure,
             ticker=TICKER,
         )
-        for seat in one_committee().seats
+        for seat in seated.seats
         for round_index, exposure in ((OPENING, opening), (REBUTTAL, final))
     )
 
 
-def independent_rows(*, exposure: float, on: date = DAY) -> tuple[dict[str, object], ...]:
+def independent_rows(
+    *, exposure: float, on: date = DAY, table: Composition | None = None
+) -> tuple[dict[str, object], ...]:
+    seated = one_committee() if table is None else table
     return tuple(
         independent(
             model=seat.model,
@@ -85,7 +95,7 @@ def independent_rows(*, exposure: float, on: date = DAY) -> tuple[dict[str, obje
             ticker=TICKER,
             on=on,
         )
-        for seat in one_committee().seats
+        for seat in seated.seats
     )
 
 
@@ -95,8 +105,9 @@ def independent_rows(*, exposure: float, on: date = DAY) -> tuple[dict[str, obje
 def test_only_the_arms_the_experiment_declares_are_scored_and_the_control_leads() -> None:
     rows = frame_to_rows(
         frame_of(
-            stored(arm="debate_placebo"),
-            stored(arm="something_else"),
+            # A post-debate row, which is what makes a treatment arm scorable.
+            stored(arm="debate_placebo", round_index=REBUTTAL),
+            stored(arm="something_else", round_index=REBUTTAL),
             independent(),
         )
     )
@@ -124,6 +135,13 @@ def test_a_committee_outside_the_design_raises_rather_than_drawing_a_flat_curve(
 
 ALL_ARMS: tuple[str, ...] = tuple(str(arm) for arm in Arm)
 
+SEATED_COMMITTEES: tuple[Composition, ...] = balanced_design(models=MODELS)[:2]
+"""Two committees of the design, fully seated by the fixture below.
+
+Their seats are disjoint -- `rotation-0` and `rotation-1` give each model a
+different persona -- so the control arm gets one row per agent and no duplicate.
+"""
+
 
 def dryrun_artefacts() -> tuple[Settings, pd.DataFrame, pd.DataFrame]:
     """Settings, prices and decisions that both scorers can be run over.
@@ -131,19 +149,30 @@ def dryrun_artefacts() -> tuple[Settings, pd.DataFrame, pd.DataFrame]:
     Every treatment arm is present, the placebo included: it is the arm that
     changed sign between the two implementations, and an agreement test that
     skipped it would have passed on the run that produced the finding.
+
+    Two committees rather than one, and they disagree. A committee short of a seat
+    is now dropped from the pooled average rather than aggregated over the
+    survivors, so a fixture seating only one committee would make the pooled scope
+    and that committee the same population -- and the test below, which asks
+    whether they are different answers, would be checking nothing.
     """
     settings = Settings(tickers=(TICKER,), agent_models=MODELS, seed=SEED)
     prices = synthetic_prices(tickers=(TICKER,), start=DAY, sessions=8, seed=settings.seed)
     rows: list[dict[str, object]] = []
     for index, day in enumerate(day.date() for day in opens().index):
         exposure = 0.5 if index < 4 else -0.5
-        rows.extend(independent_rows(exposure=exposure, on=day))
-        for offset, arm in enumerate(ALL_ARMS[1:], start=1):
-            rows.extend(
-                committee_rows(
-                    arm=arm, opening=exposure, final=-exposure / offset, on=day
+        for scale, table in enumerate(SEATED_COMMITTEES, start=1):
+            rows.extend(independent_rows(exposure=exposure, on=day, table=table))
+            for offset, arm in enumerate(ALL_ARMS[1:], start=1):
+                rows.extend(
+                    committee_rows(
+                        arm=arm,
+                        opening=exposure,
+                        final=-exposure / (offset * scale),
+                        on=day,
+                        table=table,
+                    )
                 )
-            )
     return settings, prices, frame_of(*rows)
 
 

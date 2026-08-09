@@ -9,7 +9,7 @@ artefacts -- on the dry run the placebo arm changed sign between them, and no
 choice of committee reproduced the CLI figure. A dashboard that disagrees with
 the command that declares the result is worse than no dashboard.
 
-**Pooled is the declared scope.** The pre-registered comparison is the committee
+**Pooled is the declared scope.** The secondary declared comparison is the committee
 before debate against the same committee after, read as one experiment over the
 balanced design, so the eight committees are averaged equally --
 :func:`~council.scoring.arm_exposures` does that averaging. A single committee
@@ -39,6 +39,7 @@ from council.debate.compositions import Composition
 from council.domain.signal import Arm
 from council.evaluation.aggregation import AggregationRule
 from council.evaluation.frames import DecisionRow, PointKey, frame_to_rows
+from council.evaluation.persuasion import REBUTTAL_ROUND
 from council.planning import TREATMENT_ARMS
 from council.scoring import arm_exposures
 
@@ -84,9 +85,22 @@ def arms_in(rows: Sequence[DecisionRow]) -> tuple[Arm, ...]:
     label has no defined fallback to the control. A frame carrying one is
     reported by :func:`council.app.artefacts.order_arms` on the tables that can
     show it rather than silently scored here.
+
+    The control qualifies on plain presence; a treatment qualifies only on a
+    **post-debate** row. :func:`~council.scoring.arm_exposures` overwrites the
+    committee's independent view at the rebuttal round, so a treatment arm holding
+    opening rounds alone -- what a sweep interrupted by an outage stores -- draws a
+    curve identical to the control's and reads as a clean null.
+    :func:`council.scoring.evaluate_experiment` restricts the same way, so the two
+    surfaces keep agreeing about which arms a run holds.
     """
     present = {row.arm for row in rows}
-    return tuple(arm for arm in SCORED_ARMS if str(arm) in present)
+    post_debate = {row.arm for row in rows if row.round_index == REBUTTAL_ROUND}
+    return tuple(
+        arm
+        for arm in SCORED_ARMS
+        if str(arm) in (present if arm is Arm.INDEPENDENT else post_debate)
+    )
 
 
 def compositions_for(
@@ -162,7 +176,15 @@ def random_baseline_curve(
             targets=random_arm_targets(
                 exposures=exposures,
                 opens=opens,
-                turnover_per_period=reference.metrics.turnover_per_period,
+                # Per ticker, the way `scoring.score_arm` passes it, off the
+                # reference's own per-column results. `metrics.turnover_per_period`
+                # is a mean across the basket, and the null realises turnover per
+                # column, so a scalar matches each column to the average rather
+                # than to its own ticker's rate.
+                turnover_per_period={
+                    ticker.ticker: ticker.turnover / len(ticker.position)
+                    for ticker in reference.result.per_ticker
+                },
                 rebalance_threshold=rebalance_threshold,
                 seed=seed,
             ),
@@ -218,8 +240,12 @@ def build_curves(
             + ", ".join(sorted({row.arm for row in rows}) or ["nothing"])
         )
 
+    # The drop count is the CLI's to publish -- `ExperimentResults` carries it as
+    # `short_committee_points` -- so it is discarded here rather than recomputed
+    # under a second definition on the panel.
     exposures = {
-        arm: arm_exposures(rows, compositions=compositions, arm=arm, rule=rule) for arm in arms
+        arm: arm_exposures(rows, compositions=compositions, arm=arm, rule=rule)[0]
+        for arm in arms
     }
     if not any(exposures.values()):
         raise ValueError(

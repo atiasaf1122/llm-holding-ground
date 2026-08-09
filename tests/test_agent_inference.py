@@ -5,7 +5,9 @@ Against :class:`~council.agents.mock.MockProvider`: no daemon, no network, no GP
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
+from typing import Any
 
 import pytest
 
@@ -13,6 +15,7 @@ from council.agents.inference import DecisionPoint, failure_mode, generate_decis
 from council.agents.mock import MockProvider
 from council.agents.prompt import PeerView
 from council.agents.provider import (
+    Completion,
     ContextOverflowError,
     MalformedOutputError,
     MissingModelError,
@@ -30,13 +33,16 @@ FIXED_NOW = datetime(2026, 1, 1, tzinfo=UTC)
 CONTEXT = "Daily returns %, oldest first.\n+1.00 -0.50 +2.00"
 
 
-def make_point(*, arm: Arm = Arm.INDEPENDENT, composition: str | None = None) -> DecisionPoint:
+def make_point(
+    *, arm: Arm = Arm.INDEPENDENT, composition: str | None = None, round_index: int = 0
+) -> DecisionPoint:
     return DecisionPoint(
         model="alpha",
         persona=MOMENTUM_BOLD,
         ticker="AAA",
         decision_date=date(2022, 3, 1),
         arm=arm,
+        round_index=round_index,
         composition=composition,
     )
 
@@ -83,7 +89,8 @@ async def test_a_successful_generation_carries_the_signal_and_its_cost() -> None
 
 async def test_the_point_and_the_stored_row_agree_about_what_a_decision_is() -> None:
     # If these drifted apart a resumed run would regenerate a sweep it already owns.
-    point = make_point(arm=Arm.DEBATE, composition="quad")
+    # Round 1, because peers are only shown after the opening round.
+    point = make_point(arm=Arm.DEBATE, composition="quad", round_index=1)
 
     decision, _ = await generate_decision(
         MockProvider(),
@@ -150,6 +157,112 @@ async def test_a_well_formed_object_that_is_not_a_signal_counts_as_malformed() -
 
     assert decision.failure is FailureMode.MALFORMED
     assert decision.exposure == 0.0
+
+
+async def test_a_failed_decision_records_the_requests_it_actually_cost() -> None:
+    # `Decision.retries` is documented as "attempts after the first" and is stored
+    # as a result rather than as telemetry. The failed row is the one place retries
+    # actually happened, and it was the one row that recorded none of them.
+    provider = MockProvider(
+        responses=[ProviderUnavailableError("daemon down after 3 attempt(s)", retries=2)]
+    )
+
+    decision, _ = await generate_decision(
+        provider, point=make_point(), price_context=CONTEXT, seed=7, now=FIXED_NOW
+    )
+
+    assert decision.failure is FailureMode.UNAVAILABLE
+    assert decision.retries == 2
+
+
+async def test_a_failed_decision_without_a_retry_count_records_none() -> None:
+    provider = MockProvider(responses=[MalformedOutputError("nope")])
+
+    decision, _ = await generate_decision(
+        provider, point=make_point(), price_context=CONTEXT, seed=7, now=FIXED_NOW
+    )
+
+    assert decision.retries == 0
+
+
+async def test_a_malformed_generation_records_the_requests_it_cost_too() -> None:
+    # The retry fix landed on two of its four paths. UNAVAILABLE and TRUNCATED
+    # stored their count; the MALFORMED family stored zero, on the rows that cost
+    # the most.
+    provider = MockProvider(responses=[MalformedOutputError("content was not JSON", retries=2)])
+
+    decision, _ = await generate_decision(
+        provider, point=make_point(), price_context=CONTEXT, seed=7, now=FIXED_NOW
+    )
+
+    assert decision.failure is FailureMode.MALFORMED
+    assert decision.retries == 2
+
+
+class _RetriedCompletion:
+    """A provider whose request succeeded, after retries, with an unusable object."""
+
+    async def preflight(self) -> None:
+        return None
+
+    async def generate(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: Mapping[str, Any],
+        max_tokens: int | None = None,
+    ) -> Completion:
+        return Completion(
+            data={"exposure": 5.0, "confidence": 0.9, "rationale": "all in"},
+            output_tokens=12,
+            prompt_tokens=64,
+            retries=2,
+            latency_seconds=0.0,
+        )
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def test_a_well_formed_non_signal_records_the_requests_the_call_cost() -> None:
+    # `ValidationError` fires after the request returned, so the count is on the
+    # completion rather than on the error. Reading only the error stored zero for a
+    # call that had already paid for two transport retries.
+    decision, _ = await generate_decision(
+        _RetriedCompletion(), point=make_point(), price_context=CONTEXT, seed=7, now=FIXED_NOW
+    )
+
+    assert decision.failure is FailureMode.MALFORMED
+    assert decision.retries == 2
+
+
+async def test_a_well_formed_non_signal_records_the_tokens_the_call_burned() -> None:
+    # `output_tokens` is the other cost column the completion reports, and
+    # `Completion`'s docstring calls those a result rather than telemetry. It was
+    # never passed to `_failed_decision`, so it fell back to `Decision`'s default of
+    # zero -- and a per-model cost tally read off the parquet under-counted exactly
+    # the models that over-ran their schema. The same completion object is in scope
+    # on the line that reads `retries`.
+    decision, _ = await generate_decision(
+        _RetriedCompletion(), point=make_point(), price_context=CONTEXT, seed=7, now=FIXED_NOW
+    )
+
+    assert decision.failure is FailureMode.MALFORMED
+    assert decision.output_tokens == 12
+
+
+async def test_a_provider_error_with_no_completion_records_no_tokens() -> None:
+    # The other branch: nothing returned, so there is nothing to charge. Pinned so
+    # the resolution above cannot be turned into a fabricated count.
+    provider = MockProvider(responses=[ProviderUnavailableError("daemon down", retries=2)])
+
+    decision, _ = await generate_decision(
+        provider, point=make_point(), price_context=CONTEXT, seed=7, now=FIXED_NOW
+    )
+
+    assert decision.failure is FailureMode.UNAVAILABLE
+    assert decision.output_tokens == 0
 
 
 async def test_a_failed_decision_still_names_the_prompt_that_produced_it() -> None:

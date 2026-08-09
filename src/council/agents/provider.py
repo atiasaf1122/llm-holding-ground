@@ -33,7 +33,22 @@ class ProviderError(RuntimeError):
     """Base for every failure a backend can produce at generation time."""
 
 
-class TruncatedGenerationError(ProviderError):
+class RetriedError(ProviderError):
+    """A failure that may have cost more than one request.
+
+    ``retries`` is the same quantity :attr:`Completion.retries` carries -- attempts
+    after the first -- so that a decision point which failed records the requests it
+    actually cost rather than the zero a default supplies. The count only exists
+    inside the request loop, and on the raise path it was previously discarded into
+    the free-text message.
+    """
+
+    def __init__(self, *args: object, retries: int = 0) -> None:
+        super().__init__(*args)
+        self.retries = retries
+
+
+class TruncatedGenerationError(RetriedError):
     """Generation stopped for a reason other than the model choosing to stop."""
 
 
@@ -52,16 +67,28 @@ class ContextOverflowError(TruncatedGenerationError):
     """
 
 
-class MalformedOutputError(ProviderError):
-    """The completion was not a JSON object, or the envelope was not JSON."""
+class MalformedOutputError(RetriedError):
+    """The completion was not a JSON object, or the envelope was not JSON.
+
+    A :class:`RetriedError` for the reason the other two are: the transport retries
+    happen before anything is parsed, so a malformed answer can follow one or more
+    of them, and ``Decision.retries`` is a published column rather than telemetry.
+    """
 
 
-class ProviderUnavailableError(ProviderError):
+class ProviderUnavailableError(RetriedError):
     """The daemon could not be reached, or kept returning a server error."""
 
 
-class MissingModelError(ProviderError):
-    """The daemon is running but does not have the requested model."""
+class MissingModelError(RetriedError):
+    """The daemon is running but does not have the requested model.
+
+    A :class:`RetriedError` for the reason the others are: a 404 is raised after
+    :meth:`OllamaProvider._request` has already spent its transport retries, so the
+    decision it produces cost more than one request. It remains a
+    :class:`ProviderError`, so ``failure_mode``'s ``UNAVAILABLE`` branch and
+    preflight's positional-argument raise are unaffected.
+    """
 
 
 class PreflightError(ProviderError):

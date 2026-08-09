@@ -29,22 +29,84 @@ A second question comes free from the same data:
 
 ## Pre-registered primary comparison
 
-*Declared before any result was generated. Everything else in this repository is
-exploratory and is labelled as such.*
+*A declaration was made before any result was generated, and the two thresholds it is
+stated in were fixed in the first commit. The declared statistic has since been amended
+three times, after the results existed; the original wording is quoted verbatim under
+**Amendments** below and all three changes are named there. Four further bounds were added
+afterwards and are marked as such below. Everything else in this repository is exploratory
+and is labelled as such.*
 
-> **Primary comparison.** The four-agent committee under `mean` aggregation, **after debate**,
-> versus the same committee **before debate**, on the two-year daily arm, net of costs.
+> **Primary statistic.** The share of **agent-conversation observations** — one agent, one
+> committee, one contested point, one arm — in which the agent's exposure moved by
+> **at least** `0.20` between its opening and its post-debate view (inclusive at the bar, as
+> `council.evaluation.threshold.meets` applies it), partitioned by the confidence it reported
+> *before* seeing its peers. Observations repeat across seats and committees and are
+> therefore not independent: one contested decision point contributes one observation per
+> seat of every committee. Pairs in which either round records a failed generation are
+> excluded.
 >
-> **Primary statistic.** The share of contested decision points at which an agent shifted by
-> more than `0.20` exposure, partitioned by the confidence it reported *before* seeing its
-> peers.
+> **This is the single primary outcome.** It is what decides the result. It involves no
+> returns and no equity curve, so no cost convention qualifies it.
 >
 > **Direction.** No prediction is registered. Both outcomes are publishable and the null is
 > a real possibility.
+>
+> **Secondary declared outcome.** The four-agent committee under `mean` aggregation,
+> **after debate**, versus the same committee **before debate**, net of costs, on the
+> two-year run at daily decision frequency — the equity comparison and the
+> window-by-window record under it. Declared, and reported beside the primary outcome, but
+> it does not decide the result: the market here is a scoring function, not a goal. The CLI
+> and the dashboard label it *secondary declared comparison* for that reason.
+>
+> **No multiplicity correction is applied across the two.** They are two declared
+> quantities rather than one tested twice, and a reader who wants to treat them as a family
+> should apply their own.
+>
+> **Amendments.** Three, all made after the results committed in
+> `fa436fa` and `98a4020`. As declared in `001c8ff` it read:
+>
+> > The share of contested decision points at which an agent shifted by more than `0.20`
+> > exposure, partitioned by the confidence it reported *before* seeing its peers.
+>
+> *The unit* changed from contested decision points to agent-conversation observations.
+> This is the larger of the two changes — one contested point contributes one observation
+> per seat of every committee, so at the shipped design the denominator is roughly
+> thirty-two times the one originally declared — and it is a correction rather than a
+> choice: `evaluation.persuasion.shifts` has always emitted one record per (composition,
+> arm, date, ticker, model, persona), and `shift_rate_by_confidence` has always divided by
+> that count, so the declared unit named a quantity the code never computed. *The bar*
+> changed from "more than `0.20`" to "at least `0.20`", for the reason in the paragraph
+> below: every predicate in `threshold.py` has always applied the inclusive comparison.
+> Neither amendment was made to move a number in a chosen direction, and neither has to be
+> taken on trust — the recomputed figures are in [`docs/CLAIMS.md`](docs/CLAIMS.md).
+> *The deciding outcome* changed: `001c8ff` headed the equity comparison
+> **Primary comparison.** beside a different **Primary statistic.**, with no rule for
+> which decides; it is now the secondary declared outcome and explicitly does not decide
+> the result.
 
-Two thresholds are fixed in [`config.py`](src/council/config.py) rather than chosen later:
-`shift_threshold = 0.20` defines what counts as changing one's mind, and
-`dispersion_threshold = 0.25` defines which points are contested enough to debate.
+The inclusive convention is not a later reading of an ambiguous sentence: it is what
+[`config.py`](src/council/config.py) declared beside `shift_threshold` before any debate
+ran — *"a move of this size counts as having shifted"* — and what every predicate in
+[`evaluation/threshold.py`](src/council/evaluation/threshold.py) has always applied.
+
+Six bounds are fixed in [`config.py`](src/council/config.py) rather than left to a reading of
+the output — but they do not share a provenance, and the difference is the whole value of a
+pre-registration.
+
+**Declared in the first commit (`afce0ae`), before any result existed.**
+`shift_threshold = 0.20` (what counts as changing one's mind) and `dispersion_threshold = 0.25`
+(one of two sufficient conditions for a point to be contested — the other is a directional
+split, which the crossed personas produce on nearly every point, so the threshold gates very
+little in practice).
+
+**Added in `cbf6a55`, after the results committed in `fa436fa` and `98a4020`.**
+`agreement_spread = 0.20`, `stillness_rounds = 2` and `max_debate_rounds = 1` (when a
+conversation ends), and `placebo_min_gap_sessions = 60` (how far back a placebo donor must
+come from). Two of these were calibrated from that run's measurements rather than chosen
+blind: `agreement_spread` from its measured spreads, `placebo_min_gap_sessions` from its
+donor distances. They are declared here so a reader can check a result against them; they
+are **not** pre-registered and must not be read as such. Each carries its justification
+where it is declared.
 
 **Why this paragraph exists.** With three aggregation rules, eight committee configurations
 and several statistical tests, something will look significant by chance. Fixing the
@@ -63,12 +125,18 @@ arm removes one of them, and collapsing any arm into another destroys the infere
 |---|---|---|
 | **Independent** | nothing | — the control everything is measured against |
 | **Debate** | peers' rationales **and** their exposure numbers | — the treatment |
-| **Rationale only** | peers' rationales, **no numbers** | **anchoring** — drifting toward a number on the page rather than being convinced |
-| **Placebo** | peers' rationales **from an unrelated day** | **compliance** — reacting to contradiction itself rather than to the argument |
+| **Rationale only** | peers' rationales, **with the peer's stated exposure removed** | **anchoring on a peer's stated position** — figures a peer wrote into its own prose are not removed |
+| **Placebo** | peers' rationales **from an unrelated day** (and possibly another instrument) | **compliance** — reacting to contradiction itself rather than to the argument |
 
 The placebo arm is the one that decides what the whole study means. If agents move as much
 when the counter-arguments are irrelevant as when they are pertinent, then nothing here is
 persuasion and the headline result would have to be described very differently.
+
+Every decision here is made once a day, on every session that has a full `lookback_days`
+window behind it — the first `lookback_days - 1` sessions of the price table are warm-up
+and carry no decision: **daily is the only decision frequency this repository
+implements.** There is no resampling step and
+nothing at any other frequency to compare against.
 
 ### The agents
 
@@ -88,13 +156,16 @@ the same rise reach opposite conclusions, which is the precondition for the expe
 
 The obvious design assigns each of four models one of four personas in every combination:
 4⁴ = 256 configurations. At eight model calls per debate over a thousand decision points
-that is **two million inferences** — over a week of continuous compute — and most of it is
-redundant.
+that is two million inferences per arm, and across the three treatment arms this design
+runs that is **six million inferences** — about twenty-seven days of continuous compute —
+and most of it is redundant.
 
 Instead, [`debate/compositions.py`](src/council/debate/compositions.py) generates a
 **balanced design**: a Latin square in which every model holds every persona exactly once
 (4 configurations), plus the 4 uniform references where every seat holds the same persona.
-**Eight configurations, the same questions answered, one thirty-second of the compute.**
+**Eight configurations, one thirty-second of the compute — model and persona main effects
+separated, at the cost of the interaction between particular pairings, which this study does
+not ask about.**
 
 The balance property is generated arithmetically and asserted by a test, because a
 hand-written table with one typo silently destroys the design while still looking balanced.
@@ -107,11 +178,25 @@ heard by nobody; with a fixed order you measure the order rather than the model.
 **Anonymous.** Peers are "another analyst", never "model X" — otherwise a prior about a
 named lab does the persuading.
 
-**One round.** Each agent gives an opening view, reads all peers, and gives a final view.
+**One round.** Each agent gives an opening view, reads all peers, and gives a final view. The
+protocol can also stop on agreement or on stillness, but every shipped path pins the cap at
+one rebuttal round, so that is what runs; raising it fails loudly rather than being ignored.
 
 **Only where there is disagreement.** On a point where the agents already agree, a
-conversation cannot change the committee's decision and teaches nothing. Skipping those is
-also most of the compute budget.
+conversation cannot change the committee's decision and teaches nothing. This was expected to
+be most of the compute budget; the measured contested share was 100%, so it saved nothing.
+
+**That 100% is not the share for the committee that debates.**
+[`pipeline.select_contested`](src/council/pipeline.py) measures dispersion **once**, over
+the whole independent arm pooled across every model and every persona, and
+[`debate.sweep.run_debate_arms`](src/council/debate/sweep.py) applies that one list
+unchanged to all eight committees. The justification above is stated per committee; the
+figure is a pooled-grid figure, and the two are not the same number. Recomputed per
+committee on the superseded two-model run, the contested share is **449 of 1,120, 40%**
+— by committee: rotations 56, 125, 70 and 123 of 140, uniforms 3, 11, 30 and 31 of 140.
+At the unit the justification is stated in the gate is not vacuous, and the saving it was
+expected to produce was never measured. The mechanism is kept because it is correct, and
+what it costs or saves is an open question rather than a settled one.
 
 ---
 
@@ -140,25 +225,48 @@ decision by a factor of a million and asserting the rendered context is byte-ide
 
 Named here rather than left for a reader to find.
 
-- **Statistical power is limited.** Two years is roughly ten independent six-month windows.
-  Only a large effect would be detectable, and the paired design — comparing a committee to
-  itself on the same days — is what makes even that possible. This is a **methodology
-  demonstration, not a claim about markets.**
+- **Statistical power is limited.** Two years is four non-overlapping six-month windows, and
+  the shipped comparison cuts the period into `council.scoring.DEFAULT_WINDOW_COUNT = 5`
+  windows of roughly 4.8 months. Only a large effect would be detectable, and the paired
+  design — comparing a committee to itself on the same days — is what makes even that
+  possible. This is a **methodology demonstration, not a claim about markets.**
 - **Agents are stateless.** No memory across decisions and no awareness of the position
-  currently held. That is what makes the independent signals reusable across every committee
-  and every frequency arm, and it is a real cost, not an oversight.
+  currently held. That is what makes the independent signals reusable across every committee,
+  and it is a real cost, not an oversight.
 - **Self-reported confidence is not assumed to mean anything.** It is measured
   ([`evaluation/calibration.py`](src/council/evaluation/calibration.py)) rather than used to
   weight aggregation — using it before establishing that it is calibrated would answer the
   question with itself.
+- **Half the headline question has no measurement in the market arms.** Nothing shipped
+  crosses *was the agent right* with *did the agent hold*: calibration relates confidence
+  to being right, persuasion relates confidence to shifting, and no artefact joins them.
+  The probe is the only instrument that pairs the two, and its confidences had no
+  variation, so "does being right make any difference" is posed here and answered nowhere.
 - **Anonymisation reduces leakage; it does not prove its absence.** A description specific
   enough to be useful may be specific enough to recognise.
 - **A single deterministic sample per decision.** Intra-agent variance is unmeasured, so
   some of what is attributed to disagreement between agents is noise within one.
-- **One asset class, one market, one path.** Nothing here generalises beyond it.
+- **The arms do not cover the same decision points.** The placebo needs a donor at least
+  `placebo_min_gap_sessions` back, so its earliest points are abandoned while the other arms
+  keep them — the first 60 decision dates in either case: 60 of 461 dates (120 of 922 points)
+  at the configured range, and 60 of 70 dates (120 of 140 contested points) on the six-month
+  slice. `council.app.tables.coverage_note` reports the gap; any debate-minus-placebo
+  difference must be read against it. The donor draw also constrains only the date, not the
+  ticker, so a debate-minus-placebo difference differences instrument identity along with day
+  relevance.
+- **Every run reported here used synthetic prices.** `council.data.prices.synthetic_prices`
+  generates geometric random walks over the configured calendar; this repository fetches no
+  market data, and `load_prices` requires a `data/prices.parquet` the user supplies. There is
+  nothing in these series to forecast, so the return columns are arithmetic and only the
+  behavioural columns are readable.
+- **One asset class, one market, one path.** Nothing here generalises beyond it. This applies
+  to a run supplied with real history; under synthetic prices there is no market to
+  generalise from at all.
 - **Ticker selection carries hindsight.** Mitigated by stating the selection rule in
   [`config.py`](src/council/config.py) before choosing — the largest company by market
   capitalisation in each of two dissimilar sectors, as of the start date — but not removed.
+  This too applies only to a run supplied with real history: under synthetic prices the
+  ticker is an RNG seed and carries no hindsight.
 
 ---
 
@@ -180,9 +288,19 @@ marked and deselected by default:
 uv run pytest -m gpu
 ```
 
-Generation is the only expensive stage and is checkpointed per (model, persona, ticker), so
-an interrupted run resumes. `COUNCIL_CUDA_VISIBLE_DEVICES` pins it to one card, which
-matters on a machine doing other work.
+Two stages are expensive and both resume from what is already on disk. Generation
+checkpoints per (model, persona, ticker). The debate sweep is the larger bill by an order
+of magnitude — at the shipped four-model settings it is 177,024 inferences against
+generation's 14,752, about twelve times the independent arm — and it checkpoints per
+(committee, arm, ticker), which is what a group *is* for a debate. An interrupted run of
+either regenerates only what is missing. `COUNCIL_CUDA_VISIBLE_DEVICES` pins the process
+to one card, which matters on a machine doing other work.
+
+The dashboard reads whatever artefacts are in `data/`:
+
+```bash
+uv run streamlit run src/council/app/dashboard.py
+```
 
 ---
 
@@ -196,6 +314,7 @@ src/council/
   debate/        balanced compositions and the debate protocol
   backtest/      the fill rule, costs, metrics, and the random baseline
   evaluation/    dispersion, calibration, persuasion, influence, windows
+  app/           the dashboard: artefact loading, panels, curves, pre-registration panel
   probe/         the capitulation probe: known-answer items, no prices
 ```
 
@@ -214,6 +333,13 @@ uv run python -m council probe --model qwen3:8b
 - [x] Experiment contract, backtest engine, and the lookahead tests
 - [x] Data layer with the anonymisation boundary
 - [x] Provider, agent runner, debate protocol, evaluation
-- [ ] End-to-end dry run on the mock provider
-- [ ] Generation run and results
-- [ ] Dashboard and the results write-up
+- [x] End-to-end dry run on the mock provider
+- [x] Dashboard and the results write-up
+- [ ] A current generation run and results. Two runs were completed — two models, then
+      four — and **both are superseded**: each covered a six-month window that was never
+      chosen, against the two-year range `config.py` declares, and each was scored with a
+      floating-point comparison since replaced. The two-model run's artefacts are under
+      [`docs/results/superseded/`](docs/results/superseded/) and are marked as such; the
+      four-model run's were kept only in `data/` and are gone, so every figure quoted
+      from it — `CLAIMS.md` C14's 138/140 and `findings.md` section 4's screen — cannot
+      be rechecked. **There is no current run.**

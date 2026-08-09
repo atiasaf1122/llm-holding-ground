@@ -20,16 +20,25 @@ from typing import Any
 
 import pytest
 
+import council.debate.sweep as council_sweep
 from council.agents.mock import MockProvider
 from council.agents.prompt import PeerView, build_prompt
 from council.agents.provider import Provider
-from council.debate.compositions import Seat, balanced_design
+from council.debate.compositions import Seat
 from council.debate.placebo import select_placebo_point
-from council.debate.protocol import AgentReply, DebateTranscript, StopReason, run_debate
+from council.debate.protocol import (
+    DEFAULT_REBUTTAL_ROUNDS,
+    AgentReply,
+    DebateTranscript,
+    StopReason,
+    Turn,
+    _nobody_moved,
+    run_debate,
+)
 from council.debate.sweep import run_debate_arms
 from council.domain.signal import Arm, FailureMode, Signal
 from council.pipeline import open_store, select_contested, stored_decisions
-from helpers_debate import PRICE_CONTEXT, committee, contested, placebo_pool
+from helpers_debate import FLAT, PRICE_CONTEXT, committee, contested, placebo_pool
 from helpers_pipeline import make_prices, make_settings, run_independent
 
 SEAT_ORDER = [seat.persona.name for seat in committee().seats]
@@ -109,7 +118,7 @@ class TestAgreement:
         # Inclusive, like every other threshold here -- and pinned on the side of
         # the representation error that a bare `max - min <= spread` gets wrong.
         # 0.9 - 0.7 is 0.20000000000000007, so the bare form calls this committee
-        # still apart; `meets` calls it agreed, which is what the bar says in
+        # still apart; `within` calls it agreed, which is what the bar says in
         # prose. Checking only the other side is what made this test vacuous
         # once: the rule could be reverted with the whole suite still green.
         transcript = await debate([[1.0, 0.5, -0.5, -1.0], [0.9, 0.9, 0.7, 0.7]])
@@ -165,6 +174,132 @@ class TestStillness:
 
         assert transcript.stop_reason is StopReason.SETTLED
         assert max(exposures) - min(exposures) > 0.20
+
+    async def test_settled_is_reachable_at_the_shipped_cap_with_one_still_round(
+        self,
+    ) -> None:
+        # Three docstrings asserted SETTLED "cannot occur in any run this repository
+        # makes" and is "Unreachable at the shipped cap, and arithmetically so". The
+        # arithmetic holds at `stillness_rounds = 2` only. The field is
+        # `Field(default=2, ge=1, le=10)`, the sweep threads the run's own value
+        # through to `run_debate`, and `COUNCIL_STILLNESS_ROUNDS=1` is a supported
+        # configuration this suite already parametrises against the sweep.
+        transcript = await debate(
+            [[1.0, -1.0, 1.0, -1.0]],
+            max_rounds=DEFAULT_REBUTTAL_ROUNDS,
+            stillness_rounds=1,
+        )
+
+        assert transcript.stop_reason is StopReason.SETTLED
+        assert transcript.rebuttal_rounds == DEFAULT_REBUTTAL_ROUNDS
+
+    def test_the_unreachability_claim_is_qualified_by_the_bound_it_rests_on(self) -> None:
+        from council.config import PROJECT_ROOT
+
+        config = (PROJECT_ROOT / "src" / "council" / "config.py").read_text(encoding="utf-8")
+        protocol = (PROJECT_ROOT / "src" / "council" / "debate" / "protocol.py").read_text(
+            encoding="utf-8"
+        )
+        # The enum's per-member docstring is source-only, so it is read as source.
+        member = " ".join(protocol.split('SETTLED = "settled"')[1].split('"""')[1].split())
+
+        for body in (" ".join(config.split()), " ".join(protocol.split())):
+            assert "cannot occur in any run this repository makes" not in body
+            assert "stillness_rounds = 2" in body
+        assert "Unreachable at the shipped cap, and arithmetically so" not in member
+        assert "stillness_rounds = 1" in member
+
+
+class PartialCaller:
+    """Answers only the seats a round's script names; the rest fail to generate.
+
+    ``script[round]`` maps a seat's index in the committee to its exposure. A round
+    past the end repeats the last row.
+    """
+
+    def __init__(self, script: Sequence[Mapping[int, float]]) -> None:
+        self.script = [dict(row) for row in script]
+
+    async def __call__(
+        self,
+        *,
+        seat: Seat,
+        price_context: str,
+        peers: Sequence[PeerView],
+        arm: Arm,
+        round_index: int,
+    ) -> AgentReply:
+        row = self.script[min(round_index, len(self.script) - 1)]
+        index = SEAT_ORDER.index(seat.persona.name)
+        rendered = build_prompt(
+            persona=seat.persona,
+            price_context=price_context,
+            arm=arm,
+            peers=peers,
+            round_index=round_index,
+        )
+        if index not in row:
+            return AgentReply(signal=FLAT, prompt=rendered, failure=FailureMode.MALFORMED)
+        return AgentReply(
+            prompt=rendered,
+            signal=Signal(
+                exposure=row[index], confidence=0.6, rationale=f"round {round_index}"
+            ),
+        )
+
+
+class TestStillnessNeedsTheSameVoices:
+    async def test_a_round_that_changed_speakers_is_not_a_quiet_round(self) -> None:
+        # `_nobody_moved` intersected the two rounds' speaking seats and asked only
+        # whether the *shared* ones held still. A round that lost two speakers and
+        # gained two back -- with a returner's exposure flipped in sign -- was
+        # scored "nobody moved", so the streak advanced and the debate ended as
+        # SETTLED, the verdict this design reads as entrenchment.
+        script: list[Mapping[int, float]] = [
+            {0: 1.0, 1: -1.0, 2: 0.9, 3: -0.9},
+            {0: 1.0, 1: -1.0},
+            {1: -1.0, 2: 0.2, 3: 0.9},
+            {0: 1.0, 1: -1.0, 2: 0.2, 3: 0.9},
+        ]
+
+        transcript = await run_debate(
+            composition=committee(),
+            arm=Arm.DEBATE,
+            dispersion=contested(),
+            price_context=PRICE_CONTEXT,
+            caller=PartialCaller(script),
+            seed=1,
+            agreement_spread=-1.0,
+            stillness_rounds=2,
+            max_rounds=4,
+            placebo_min_gap=0,
+        )
+
+        # Seat 3 went -0.9 to +0.9 across the rounds the old rule called quiet.
+        assert transcript.stop_reason is StopReason.CAP
+        assert transcript.rebuttal_rounds == 4
+
+    def test_one_surviving_voice_cannot_show_the_committee_settled(self) -> None:
+        # `_agreed` already refuses to read consensus off fewer than two voices;
+        # the stillness predicate had no such floor, so a round in which a single
+        # seat survived and held still counted towards entrenchment.
+        seats = committee().seats
+        rounds = tuple(
+            (
+                Turn(
+                    seat=seats[0],
+                    round_index=index,
+                    peers=(),
+                    reply=AgentReply(
+                        prompt=build_prompt(persona=seats[0].persona, price_context=PRICE_CONTEXT),
+                        signal=Signal(exposure=0.5, confidence=0.6, rationale="held"),
+                    ),
+                ),
+            )
+            for index in (1, 2)
+        )
+
+        assert _nobody_moved(*rounds) is False
 
 
 def restless(rounds: int = 9) -> list[list[float]]:
@@ -223,7 +358,12 @@ class TestTheDonorGap:
         reader = sessions[-1]
 
         chosen = select_placebo_point(
-            pool=pool, point=(reader, "AAPL"), composition="rotation-0", seed=1, min_gap=gap
+            pool=pool,
+            point=(reader, "AAPL"),
+            composition="rotation-0",
+            required_seats=committee().size,
+            seed=1,
+            min_gap=gap,
         )
 
         assert sessions.index(reader) - sessions.index(chosen[0]) >= gap
@@ -236,6 +376,7 @@ class TestTheDonorGap:
                 pool=placebo_pool(committee(), days=(date(2022, 1, 3), date(2022, 1, 4))),
                 point=(date(2022, 1, 4), "AAPL"),
                 composition="rotation-0",
+                required_seats=committee().size,
                 seed=1,
                 min_gap=5,
             )
@@ -249,6 +390,7 @@ class TestTheDonorGap:
             pool=placebo_pool(committee(), days=(date(2022, 1, 3), date(2022, 1, 4))),
             point=(date(2022, 1, 4), "AAPL"),
             composition="rotation-0",
+            required_seats=committee().size,
             seed=1,
             min_gap=0,
         )
@@ -281,65 +423,99 @@ class ConstantFactory:
 
 
 class TestTheSweepStopsOnItsOwnSettings:
-    """`run_debate` resolves the two bars from the process-wide `get_settings()`
-    when its caller omits them, and the sweep omitted them -- while threading
-    `dispersion_threshold`, `max_rounds`, `seed` and `placebo_min_gap` from its own
-    `Settings` precisely so that a run configured with its own would not have one
-    read out from under it. `cli.settings_from` builds every run that way, and
-    which condition ended a conversation is a declared measurement.
+    """`run_debate` resolves its bars from the process-wide `get_settings()` when
+    its caller omits them, and the sweep must not omit them: a run configured with
+    its own `Settings` -- which is every run `cli.settings_from` builds -- would
+    otherwise have one read out from under it.
+
+    Asserted on the arguments the sweep passes rather than on the round count. At
+    the pinned cap of one rebuttal round the round count cannot distinguish the
+    bars: `StopReason.SETTLED` needs a streak of two quiet rounds and so at least
+    two rebuttal rounds, and AGREED and CAP both end the conversation after the one
+    round the cap allows. That the count is now blind to them is the finding
+    recorded beside `Settings.max_debate_rounds`, not a reason to stop checking the
+    threading.
     """
 
-    @pytest.mark.parametrize(
-        ("agreement_spread", "stillness_rounds", "rounds"),
-        [
-            # Exposures of +0.5 and -0.5 sit exactly 1.0 apart, so this bar is met
-            # in round 1 and the conversation ends AGREED after two rounds.
-            (1.0, 2, 2),
-            # Under the narrow bar nobody agrees, and nobody ever moves, so the
-            # stillness streak is what ends it -- after one quiet round here.
-            (0.20, 1, 2),
-            # The process-wide values, which is what the sweep used to run
-            # whatever its own Settings said: two quiet rounds, so three in all.
-            (0.20, 2, 3),
-        ],
-    )
-    def test_the_bars_come_from_the_runs_settings(
-        self, tmp_path: Path, agreement_spread: float, stillness_rounds: int, rounds: int
-    ) -> None:
-        # Arrange -- the control arm is generated by the ordinary mock, since a
-        # committee that all said the same thing would leave nothing contested.
+    def _sweep(self, tmp_path: Path, settings_update: dict[str, Any]) -> dict[str, Any]:
+        """Run one debate group and hand back the kwargs `run_debate` was called with."""
         base = make_settings(tmp_path)
         prices = make_prices()
         run_independent(base, prices)
         store = open_store(base)
         decisions = stored_decisions(store)
-        tables = balanced_design(models=base.agent_models)
-        assert len({table.size for table in tables}) == 1
-        seats = tables[0].size
+        settings = base.model_copy(update=settings_update)
 
-        settings = base.model_copy(
-            update={
-                "agreement_spread": agreement_spread,
-                "stillness_rounds": stillness_rounds,
-            }
-        )
+        seen: list[dict[str, Any]] = []
+        real = run_debate
 
-        # Act
-        report = asyncio.run(
-            run_debate_arms(
-                settings=settings,
-                prices=prices,
-                decisions=decisions,
-                contested=select_contested(decisions, settings=base),
-                provider_factory=ConstantFactory({"alpha": 0.5, "beta": -0.5}),
-                store=store,
-                arms=(Arm.DEBATE,),
-                rebuttal_rounds=3,
+        async def spy(**kwargs: Any) -> DebateTranscript:
+            seen.append(kwargs)
+            return await real(**kwargs)
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(council_sweep, "run_debate", spy)
+            asyncio.run(
+                run_debate_arms(
+                    settings=settings,
+                    prices=prices,
+                    decisions=decisions,
+                    contested=select_contested(decisions, settings=base),
+                    provider_factory=ConstantFactory({"alpha": 0.5, "beta": -0.5}),
+                    store=store,
+                    arms=(Arm.DEBATE,),
+                )
             )
+        assert seen, "the sweep held no conversation, so it passed no bars"
+        return seen[0]
+
+    @pytest.mark.parametrize(
+        ("agreement_spread", "stillness_rounds"), [(1.0, 2), (0.20, 1), (0.20, 3)]
+    )
+    def test_the_bars_come_from_the_runs_settings(
+        self, tmp_path: Path, agreement_spread: float, stillness_rounds: int
+    ) -> None:
+        # Act
+        passed = self._sweep(
+            tmp_path,
+            {"agreement_spread": agreement_spread, "stillness_rounds": stillness_rounds},
         )
 
-        # Assert -- the round count is the only reading of the stop reason a
-        # stored row currently offers.
-        assert report.held > 0
-        assert report.abandoned == 0
-        assert report.generated == report.held * seats * rounds
+        # Assert -- explicitly, not left to `run_debate`'s fallback on the
+        # process-wide settings.
+        assert passed["agreement_spread"] == agreement_spread
+        assert passed["stillness_rounds"] == stillness_rounds
+
+    def test_the_cap_the_sweep_passes_is_the_pin(self, tmp_path: Path) -> None:
+        # The sweep resolves `rebuttal_rounds` from `settings.max_debate_rounds`,
+        # so the setting is no longer read by nothing -- and its shipped value is
+        # the pin.
+        assert self._sweep(tmp_path, {})["max_rounds"] == DEFAULT_REBUTTAL_ROUNDS
+
+    def test_a_cap_above_the_pin_is_refused_rather_than_corrupting_a_run(
+        self, tmp_path: Path
+    ) -> None:
+        # The protocol is variable-length; the consumers `_check_cap` names are not,
+        # and at a higher
+        # cap they do not raise -- the resume check can never be satisfied, and
+        # `scoring.arm_exposures` reads the treatment arm at a round index a
+        # conversation that agreed early never wrote, so the treatment silently
+        # reverts to the control on exactly the converged points.
+        base = make_settings(tmp_path)
+        prices = make_prices()
+        run_independent(base, prices)
+        store = open_store(base)
+        decisions = stored_decisions(store)
+
+        with pytest.raises(ValueError, match="rebuttal round"):
+            asyncio.run(
+                run_debate_arms(
+                    settings=base.model_copy(update={"max_debate_rounds": 3}),
+                    prices=prices,
+                    decisions=decisions,
+                    contested=select_contested(decisions, settings=base),
+                    provider_factory=ConstantFactory({"alpha": 0.5, "beta": -0.5}),
+                    store=store,
+                    arms=(Arm.DEBATE,),
+                )
+            )

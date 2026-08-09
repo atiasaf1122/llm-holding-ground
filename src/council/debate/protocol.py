@@ -12,21 +12,38 @@ view is an input to any other final view. :func:`rebuttal_peers` is where that
 holds -- a whole round's peer blocks are a pure function of the previous round,
 built before any of them is sent.
 
-**Variable length, ended by a condition rather than by a count.** An opening view,
+**Ended by a condition rather than by a count -- at a cap of one.** An opening view,
 then rebuttal rounds until one of three things happens: every seat is within
-``settings.agreement_spread`` of every other, nobody moves for
-``settings.stillness_rounds`` consecutive rounds, or the cap
-``settings.max_debate_rounds`` is reached. Which one ended it is recorded as
-:class:`StopReason` and is itself a measurement -- a committee that stops without
-agreeing has entrenched, which is not the same result as one that converged. One
-caveat survives from the fixed-length version: :mod:`council.evaluation.persuasion`
-rejects a round index above 1 and would have to be taught what a middle round means
-before a run raises the cap above :data:`DEFAULT_REBUTTAL_ROUNDS`.
+``agreement_spread`` of every other, nobody moves for ``stillness_rounds``
+consecutive rounds, or the cap is reached. The cap is whatever the caller passes as
+``max_rounds``, and every shipped path passes
+:data:`DEFAULT_REBUTTAL_ROUNDS` -- ``settings.max_debate_rounds`` is what
+:func:`council.debate.sweep.run_debate_arms`, :func:`council.planning.plan_experiment`
+and :mod:`council.scoring` all resolve the cap from, so plan, run and score move
+together; this module's fallback is only for a caller that passes neither. The sweep
+refuses any value but :data:`DEFAULT_REBUTTAL_ROUNDS`. So at the shipped cap with the
+configured ``stillness_rounds = 2``, the reachable
+stop reasons are :attr:`StopReason.AGREED`, :attr:`StopReason.CAP` and
+:attr:`StopReason.NO_SPEAKERS`; :attr:`StopReason.SETTLED` needs a streak of two
+quiet rounds and therefore at least two rebuttal rounds, so it cannot occur. That
+holds at ``stillness_rounds = 2`` and not below it: the field permits 1, the sweep
+threads the run's own value through, and the test suite parametrises it, and at 1 a
+single quiet rebuttal round ends the conversation as SETTLED.
+
+Which condition ended a conversation is returned on the transcript. It is *not* a
+stored measurement: :meth:`council.debate.sweep._Sweep.hold` reads it only to
+separate a conversation held from one abandoned, :class:`DebateReport` has no
+per-reason counter, and no column in :data:`council.agents.store.STORED_COLUMNS`
+carries it. Storing and reporting it is open as task 19. Raising the cap needs every
+consumer that assumes a fixed round count taught variable length first;
+:func:`council.debate.sweep._check_cap` holds that list, refuses any other cap, and is
+pinned by test.
 
 **Contested points only.** On a day the agents already agree, a conversation
-cannot change the committee's decision, and skipping those days is most of the
-compute budget. :func:`run_debate` refuses an uncontested point rather than
-trusting its caller to have filtered.
+cannot change the committee's decision -- what skipping those days saves has never
+been measured at the committee level; on the pooled grid the contested share was
+100%, so it saved nothing. :func:`run_debate` refuses an uncontested point rather
+than trusting its caller to have filtered.
 
 Nothing here renders a prompt or writes a stored row. A seat's turn is taken
 through :class:`AgentCaller`, which is handed exactly what
@@ -56,7 +73,7 @@ from council.debate.placebo import PlaceboPool, donor_views
 from council.domain.signal import Arm, FailureMode, Signal
 from council.evaluation.dispersion import Dispersion, is_contested
 from council.evaluation.frames import PointKey
-from council.evaluation.threshold import TOLERANCE, meets
+from council.evaluation.threshold import TOLERANCE, within
 
 DEFAULT_REBUTTAL_ROUNDS = 1
 """Rounds after the opening one."""
@@ -150,9 +167,10 @@ class Turn:
 class StopReason(StrEnum):
     """Why a conversation ended.
 
-    Not bookkeeping -- this is a measurement. The number of rounds is an outcome
-    of the debate rather than a setting, and *which* condition ended it says
-    something the round count alone does not.
+    *Which* condition ended it says something the round count alone does not --
+    but it is returned on the transcript rather than stored, so at present only
+    :meth:`council.debate.sweep._Sweep.hold` reads it, and only to tell a
+    conversation held from one abandoned. See the module docstring and task 19.
     """
 
     AGREED = "agreed"
@@ -161,9 +179,15 @@ class StopReason(StrEnum):
     SETTLED = "settled"
     """Nobody moved for :attr:`Settings.stillness_rounds` consecutive rounds.
 
-    The interesting one for this study. A committee that stops without agreeing
-    has not converged: it has entrenched, every seat holding a position the others
-    argued against and none of them shifting. Two rounds rather than one because
+    Unreachable at the shipped cap **with the configured**
+    ``stillness_rounds = 2``, and arithmetically so: a streak of two quiet
+    rounds needs at least two rebuttal rounds, and every shipped path passes
+    :data:`DEFAULT_REBUTTAL_ROUNDS` = 1. At ``stillness_rounds = 1`` -- a value
+    :class:`~council.config.Settings` permits and the tests exercise -- one quiet
+    rebuttal round ends the conversation here. It is kept rather than deleted because it
+    would be the interesting one -- a committee that stops without agreeing has
+    not converged, it has entrenched -- and because raising the cap is a change to
+    the experiment rather than a tuning knob. Two rounds rather than one because
     an agent that ignored an argument on first reading may take it on the second,
     and calling it entrenched after a single quiet round would deny it that.
     """
@@ -220,7 +244,7 @@ def live_views(turns: Sequence[Turn]) -> tuple[SeatView, ...]:
 
 
 def rebuttal_peers(
-    *, composition: Composition, views: Sequence[SeatView]
+    *, composition: Composition, views: Sequence[SeatView], order_token: str
 ) -> tuple[tuple[PeerView, ...], ...]:
     """Every seat's peer block for the next round, in seat order, as one pure
     function of one round.
@@ -237,9 +261,22 @@ def rebuttal_peers(
     A round shows the round immediately before it and no earlier one. With the v1
     single rebuttal that is the whole conversation; a later version that wanted a
     running transcript would change what ``views`` is given, not this function.
+
+    Args:
+        order_token: passed straight to :func:`~council.debate.peers.peers_for`,
+            which permutes each block by a digest of it. Built by
+            :func:`run_debate` from the seed, the committee, the point and the round
+            index, so the numbering is a different one in each prompt and the same
+            one on a rerun -- and deliberately **not** from the arm. Keying it by arm
+            would vary the numbering *between* the arms as well as across prompts, so
+            the rationale-only control would differ from the treatment in peer order
+            on top of the withheld exposure. The comment in :func:`run_debate`, where
+            the token is built, has the argument.
     """
     ordered = seated_views(views, composition=composition)
-    return tuple(peers_for(seat, views=ordered) for seat in composition.seats)
+    return tuple(
+        peers_for(seat, views=ordered, order_token=order_token) for seat in composition.seats
+    )
 
 
 async def run_debate(
@@ -266,7 +303,10 @@ async def run_debate(
         price_context: the window every seat is shown, identical for all of them
             since the personas differ in the system turn alone.
         placebo_pool: required by, and only used by, the placebo arm.
-        seed: defaults to ``settings.seed``. Only the placebo draw uses it.
+        seed: defaults to ``settings.seed``. Used by the placebo draw and by the
+            peer ``order_token``, so it permutes the analyst numbering in every
+            arm; the comment on the token at the bottom of this function has the
+            argument for keeping the arm out of it.
 
     Raises:
         ValueError: for the independent arm, for an uncontested point, for fewer
@@ -282,6 +322,10 @@ async def run_debate(
     cap = settings.max_debate_rounds if max_rounds is None else max_rounds
     spread = settings.agreement_spread if agreement_spread is None else agreement_spread
     stillness = settings.stillness_rounds if stillness_rounds is None else stillness_rounds
+    # Resolved the same way the placebo draw resolves it, and for the same reason:
+    # the peer order has to reproduce exactly on a rerun of a configured seed, so
+    # it may not depend on whether the caller happened to pass one.
+    resolved_seed = settings.seed if seed is None else seed
 
     _check_runnable(
         arm=arm,
@@ -331,6 +375,14 @@ async def run_debate(
                 round_index=round_index,
                 min_gap=placebo_min_gap,
             )
+            # Restricted to the seats that spoke in the round just taken. The donor
+            # always holds every chair, so without this a failed seat costs each
+            # survivor a peer in the two real arms -- which build their block from
+            # `live_views(rounds[-1])` -- and costs the placebo nothing. The peer
+            # count would then differ between the arms whenever a generation
+            # failed: a second manipulation riding along with the intended one.
+            spoke = {turn.seat for turn in rounds[-1] if turn.view is not None}
+            views = tuple(view for view in views if view.seat in spoke)
         else:
             views = live_views(rounds[-1])
 
@@ -341,7 +393,22 @@ async def run_debate(
         rounds.append(
             await _take_round(
                 seats=seats,
-                peer_blocks=rebuttal_peers(composition=composition, views=views),
+                peer_blocks=rebuttal_peers(
+                    composition=composition,
+                    views=views,
+                    # Deliberately *not* keyed by arm. Every other field varies the
+                    # numbering across prompts, which is what removes the confound;
+                    # adding the arm would additionally vary it *between* arms, so
+                    # the rationale-only control would differ from the treatment in
+                    # peer order as well as in the withheld exposure -- a second
+                    # manipulation riding along with the intended one, which is
+                    # what `agents.prompt` and design note 3 forbid.
+                    order_token=(
+                        f"{resolved_seed}|{composition.identifier}"
+                        f"|{dispersion.decision_date.isoformat()}|{dispersion.ticker}"
+                        f"|{round_index}"
+                    ),
+                ),
                 price_context=price_context,
                 arm=arm,
                 round_index=round_index,
@@ -391,7 +458,7 @@ def _agreed(turns: Sequence[Turn], *, spread: float) -> bool:
     exposures = [view.exposure for turn in turns if (view := turn.view) is not None]
     if len(exposures) < 2:
         return False
-    return meets(spread, max(exposures) - min(exposures))
+    return within(max(exposures) - min(exposures), spread)
 
 
 def _nobody_moved(previous: Sequence[Turn], current: Sequence[Turn]) -> bool:
@@ -406,13 +473,20 @@ def _nobody_moved(previous: Sequence[Turn], current: Sequence[Turn]) -> bool:
     A seat that failed to generate is skipped rather than read as having moved to
     flat; a phantom move would reset the streak and keep a dead conversation
     running.
+
+    A round that lost or gained a speaker is not a quiet round. Intersecting the two
+    speaker sets and asking only whether the survivors held still scores a round that
+    lost two seats and gained two back -- with the returners' exposures flipped in
+    sign -- as nobody moving, which advances the streak and ends the debate as
+    :attr:`StopReason.SETTLED`, the verdict the design reads as entrenchment. And one
+    surviving voice can no more show the committee settled than :func:`_agreed` lets
+    it show consensus, so a floor of two applies here too.
     """
     before = {turn.seat: view.exposure for turn in previous if (view := turn.view) is not None}
     after = {turn.seat: view.exposure for turn in current if (view := turn.view) is not None}
-    shared = before.keys() & after.keys()
-    if not shared:
+    if before.keys() != after.keys() or len(before) < 2:
         return False
-    return all(abs(before[seat] - after[seat]) <= TOLERANCE for seat in shared)
+    return all(abs(before[seat] - after[seat]) <= TOLERANCE for seat in before)
 
 
 def _check_runnable(

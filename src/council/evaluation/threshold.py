@@ -50,6 +50,21 @@ def meets(distance: float, bar: float) -> bool:
     return distance >= bar - TOLERANCE
 
 
+def within(distance: float, bar: float) -> bool:
+    """Whether ``distance`` is at most ``bar``, inclusive at the boundary.
+
+    The inclusive at-most counterpart to :func:`meets`, carrying the same tolerance
+    and for the same reason: a gap *of* the bar is inside it, and binary floating
+    point does not agree with the decimal grid the exposures land on.
+
+    Kept here rather than written as ``meets(bar, distance)`` at the call site.
+    That spelling gives the right answer and reads as its own opposite -- the
+    configured bar arrives in the parameter named ``distance`` -- and this module
+    exists so two measurements cannot ask one question two ways.
+    """
+    return distance <= bar + TOLERANCE
+
+
 def exceeds(distance: float, bar: float) -> bool:
     """Whether ``distance`` is strictly beyond ``bar``.
 

@@ -52,9 +52,14 @@ class PerformanceMetrics:
     turnover: float
     """Absolute exposure traded over the run, averaged across the basket's tickers.
 
-    A mean rather than a total, so it can be read against the per-ticker turnover
-    budget the random baseline is calibrated to without conversion. Comparing it
-    to a whole-basket cost figure would understate the cost by the ticker count.
+    A mean rather than a total, so it is comparable between universes of different
+    sizes and is in the same units as the per-ticker budget the random baseline is
+    calibrated to. It is **not** that budget: the baseline matches one number per
+    column, and a basket whose tickers turn over at different rates has no single
+    rate to hand it. :func:`council.scoring.score_arm` therefore passes
+    ``BacktestResult.per_ticker`` rather than this figure, which is what
+    ``target_turnover_per_period`` accepting a mapping is for. Comparing this to a
+    whole-basket cost figure would understate the cost by the ticker count.
     """
 
     turnover_per_period: float

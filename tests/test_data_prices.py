@@ -55,6 +55,18 @@ def test_adding_a_ticker_does_not_perturb_the_others() -> None:
         )
 
 
+def test_lengthening_the_calendar_does_not_rewrite_the_sessions_already_there() -> None:
+    # Every column family used to be drawn sequentially from one generator, so each
+    # family after `close` started at an offset that depended on `sessions`.
+    # Lengthening the calendar therefore rewrote `open`, `high`, `low` and `volume`
+    # on sessions that already existed, silently, while leaving `close` untouched --
+    # and the backtest fills at `open`.
+    short = synthetic_prices(tickers=("AAA",), sessions=100, seed=1)
+    long = synthetic_prices(tickers=("AAA",), sessions=140, seed=1)
+
+    pd.testing.assert_frame_equal(short, long.head(len(short)))
+
+
 def test_synthetic_prices_satisfy_the_loader_invariants() -> None:
     prices = synthetic_prices(sessions=50)
 

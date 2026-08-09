@@ -281,6 +281,15 @@ def synthetic_prices(
     test never perturbs the series of the ones already there -- otherwise every
     expected value in the suite would move whenever the universe changed.
 
+    The four column families draw from four streams for the same reason, one step
+    down. Drawn sequentially from one generator, every family after ``close``
+    starts at an offset that depends on ``sessions``, so lengthening the calendar
+    rewrote ``open``, ``high``, ``low`` and ``volume`` on sessions that already
+    existed while leaving ``close`` untouched. The backtest fills at ``open``, so
+    that is the column a widened range silently changed underneath a stored run.
+    Four streams make the frame prefix-stable in ``sessions``: the first *n* rows
+    of a longer frame are the first *n* rows of a shorter one, column for column.
+
     The calendar is business days with no market holidays. Holidays would make
     it possible to write a test that passes only because one happened to fall
     inside the window under examination.
@@ -306,16 +315,19 @@ def synthetic_prices(
     calendar = pd.bdate_range(start=start, periods=sessions)
     parts: list[pd.DataFrame] = []
     for ticker in sorted(tickers):
-        rng = np.random.default_rng([seed, _ticker_entropy(ticker)])
-        close = initial_price * np.exp(np.cumsum(rng.normal(drift, volatility, sessions)))
+        entropy = _ticker_entropy(ticker)
+        streams = [np.random.default_rng([seed, entropy, family]) for family in range(4)]
+        close = initial_price * np.exp(
+            np.cumsum(streams[0].normal(drift, volatility, sessions))
+        )
 
         # The open gaps from the previous close; the first session opens at the
         # initial price so that the level is comparable across tickers.
         opens = np.empty(sessions, dtype=float)
         opens[0] = initial_price
-        opens[1:] = close[:-1] * np.exp(rng.normal(0.0, volatility / 3.0, sessions - 1))
+        opens[1:] = close[:-1] * np.exp(streams[1].normal(0.0, volatility / 3.0, sessions - 1))
 
-        wick = np.abs(rng.normal(0.0, volatility / 2.0, sessions))
+        wick = np.abs(streams[2].normal(0.0, volatility / 2.0, sessions))
         parts.append(
             pd.DataFrame(
                 {
@@ -325,7 +337,7 @@ def synthetic_prices(
                     "high": np.maximum(opens, close) * np.exp(wick),
                     "low": np.minimum(opens, close) * np.exp(-wick),
                     "close": close,
-                    "volume": np.round(rng.lognormal(15.0, 0.3, sessions)),
+                    "volume": np.round(streams[3].lognormal(15.0, 0.3, sessions)),
                 }
             )
         )

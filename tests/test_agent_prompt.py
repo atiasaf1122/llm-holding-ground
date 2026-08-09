@@ -56,6 +56,41 @@ def test_momentum_and_reversion_briefs_disagree_about_direction() -> None:
     assert "fade" not in momentum
 
 
+STANCE_SECTION = "## How you read a move"
+
+
+def stance_paragraph(name: str) -> str:
+    """The stance section as one line, so a line break cannot hide a phrase."""
+    section = load_persona_brief(name).split(STANCE_SECTION)[1].split("\n## ")[0]
+    return " ".join(section.split())
+
+
+def test_the_two_stances_are_matched_in_length_and_in_mechanism() -> None:
+    # Stance is the experiment's independent variable, and the two stances were not
+    # matched: reversion's paragraph ran 85 words to momentum's 63, and the argument
+    # differed in kind -- reversion supplied a graded causal mechanism ("the further
+    # it has run from its own recent average") while momentum asserted a bare
+    # frequency ("Trends persist more often than they break"). Stance was therefore
+    # confounded with how much argument the agent was given, in a study whose
+    # outcome is which agents hold their ground.
+    momentum = stance_paragraph("momentum-bold").split()
+    reversion = stance_paragraph("reversion-bold").split()
+
+    assert min(len(momentum), len(reversion)) / max(len(momentum), len(reversion)) > 0.9
+    for name in ("momentum-bold", "momentum-cautious", "reversion-bold", "reversion-cautious"):
+        assert "the further it has run from its own recent average" in stance_paragraph(name)
+    assert "Trends persist more often than they break" not in " ".join(momentum)
+
+
+def raw_stance_paragraph(name: str) -> str:
+    return load_persona_brief(name).split(STANCE_SECTION)[1].split("\n## ")[0]
+
+
+def test_the_two_briefs_of_one_stance_share_that_paragraph_byte_for_byte() -> None:
+    assert raw_stance_paragraph("momentum-bold") == raw_stance_paragraph("momentum-cautious")
+    assert raw_stance_paragraph("reversion-bold") == raw_stance_paragraph("reversion-cautious")
+
+
 def test_aggression_changes_only_the_size_paragraph() -> None:
     bold = load_persona_brief("momentum-bold")
     cautious = load_persona_brief("momentum-cautious")
@@ -110,10 +145,14 @@ def test_the_same_inputs_give_byte_identical_prompts_and_hashes() -> None:
 
 def test_peer_order_does_not_change_the_prompt() -> None:
     forward = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS
+        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS, round_index=1
     )
     reversed_ = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=tuple(reversed(PEERS))
+        persona=MOMENTUM_BOLD,
+        price_context=CONTEXT,
+        arm=Arm.DEBATE,
+        peers=tuple(reversed(PEERS)),
+        round_index=1,
     )
 
     assert forward == reversed_
@@ -155,7 +194,7 @@ def test_the_independent_prompt_shows_no_peers() -> None:
 
 def test_the_debate_prompt_shows_peer_rationales_and_their_numbers() -> None:
     rendered = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS
+        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS, round_index=1
     )
 
     assert PEER_HEADER in rendered.user
@@ -170,6 +209,7 @@ def test_the_rationale_only_arm_withholds_the_numbers_but_keeps_the_arguments() 
         price_context=CONTEXT,
         arm=Arm.DEBATE_RATIONALE_ONLY,
         peers=PEERS,
+        round_index=1,
     )
 
     assert "(position " not in rendered.user
@@ -183,10 +223,14 @@ def test_the_placebo_is_indistinguishable_from_a_debate_of_the_same_peers() -> N
     # else. A model able to tell the arms apart from their formatting would make
     # the control useless.
     debate = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS
+        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS, round_index=1
     )
     placebo = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE_PLACEBO, peers=PEERS
+        persona=MOMENTUM_BOLD,
+        price_context=CONTEXT,
+        arm=Arm.DEBATE_PLACEBO,
+        peers=PEERS,
+        round_index=1,
     )
 
     assert debate == placebo
@@ -195,7 +239,7 @@ def test_the_placebo_is_indistinguishable_from_a_debate_of_the_same_peers() -> N
 def test_every_debate_arm_carries_the_same_instruction() -> None:
     instructions = {
         build_prompt(
-            persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=arm, peers=PEERS
+            persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=arm, peers=PEERS, round_index=1
         ).user.replace(CONTEXT, "")
         for arm in sorted(DEBATE_ARMS)
     }
@@ -216,6 +260,32 @@ def test_a_rebuttal_with_nobody_to_disagree_with_is_refused() -> None:
         )
 
 
+def test_a_debate_arm_may_not_be_shown_peers_in_its_opening_round() -> None:
+    # The symmetric case to the two guards above, and the damaging one. Round 0 is
+    # the paired baseline the pre-registered shift statistic is measured from, and
+    # it is guaranteed to render byte-identically to the control's. A round 0 that
+    # saw peers makes every measured shift meaningless and leaves no trace beyond a
+    # prompt_hash nothing compares.
+    for arm in sorted(DEBATE_ARMS):
+        with pytest.raises(ValueError, match="opens with the control question"):
+            build_prompt(
+                persona=MOMENTUM_BOLD,
+                price_context=CONTEXT,
+                arm=arm,
+                peers=PEERS,
+                round_index=0,
+            )
+
+
+def test_the_control_arm_may_not_claim_a_second_round() -> None:
+    # The independent arm has one round by construction. A row past it would be a
+    # control that debated, filed under the arm everything is measured against.
+    with pytest.raises(ValueError, match="one round"):
+        build_prompt(
+            persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.INDEPENDENT, round_index=1
+        )
+
+
 def test_a_debate_arm_opens_with_the_control_prompt_byte_for_byte() -> None:
     # Round 0 of a debate is the independent question put to a committee. It has no
     # peers because nobody has spoken yet, and it has to render identically to the
@@ -232,7 +302,7 @@ def test_a_debate_arm_opens_with_the_control_prompt_byte_for_byte() -> None:
 
 def test_the_persona_stays_in_the_system_turn_and_peer_text_in_the_user_turn() -> None:
     rendered = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS
+        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=PEERS, round_index=1
     )
 
     assert rendered.system == load_persona_brief("momentum-bold")
@@ -275,7 +345,11 @@ def test_a_peer_cannot_forge_a_new_section_with_line_breaks() -> None:
     )
 
     rendered = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=[injected]
+        persona=MOMENTUM_BOLD,
+        price_context=CONTEXT,
+        arm=Arm.DEBATE,
+        peers=[injected],
+        round_index=1,
     )
 
     peer_lines = [line for line in rendered.user.splitlines() if line.startswith("Analyst 1")]
@@ -288,7 +362,11 @@ def test_an_oversized_peer_rationale_is_cut_to_the_schema_bound() -> None:
     shouted = PeerView(label="Analyst 1", exposure=0.0, rationale="x" * (MAX_RATIONALE_CHARS * 3))
 
     rendered = build_prompt(
-        persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, peers=[shouted]
+        persona=MOMENTUM_BOLD,
+        price_context=CONTEXT,
+        arm=Arm.DEBATE,
+        peers=[shouted],
+        round_index=1,
     )
 
     assert "x" * MAX_RATIONALE_CHARS in rendered.user

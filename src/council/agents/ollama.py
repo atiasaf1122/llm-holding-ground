@@ -136,13 +136,19 @@ class OllamaProvider:
             response, retries = await self._request("POST", "/api/chat", payload)
             latency_seconds = time.perf_counter() - started
 
+        # Both raises carry the count `_request` already returned. Without it, two
+        # failures costing identical daemon time store 2 and 0 depending only on
+        # which raise fired -- and the rows that retried are exactly the rows
+        # reporting zero, since `Decision.retries` falls back to a default here.
         if response.status_code == httpx.codes.NOT_FOUND:
             raise MissingModelError(
-                f"Ollama has no model {self._model!r}. Run: ollama pull {self._model}"
+                f"Ollama has no model {self._model!r}. Run: ollama pull {self._model}",
+                retries=retries,
             )
         if response.status_code != httpx.codes.OK:
             raise ProviderUnavailableError(
-                f"POST /api/chat returned {response.status_code}: {response.text[:200]}"
+                f"POST /api/chat returned {response.status_code}: {response.text[:200]}",
+                retries=retries,
             )
         return _parse_chat_response(
             response,
@@ -223,8 +229,14 @@ class OllamaProvider:
             ):
                 return response, attempt
             failure = f"HTTP {response.status_code}"
+        # The count is carried on the error as well as in the message. A failed
+        # decision point is stored with `Decision.retries`, which is a published
+        # column rather than telemetry, and this loop is the only place the number
+        # exists -- discarded here, the rows where retries actually happened are
+        # exactly the rows that record zero of them.
         raise ProviderUnavailableError(
-            f"{method} {path} failed after {attempts} attempt(s): {failure}"
+            f"{method} {path} failed after {attempts} attempt(s): {failure}",
+            retries=attempts - 1,
         )
 
 
@@ -244,7 +256,7 @@ def _parse_chat_response(
     ``json.loads`` fail first would blame the model's formatting for what was
     really a token limit.
     """
-    envelope = _read_envelope(response, model=model)
+    envelope = _read_envelope(response, model=model, retries=retries)
     prompt_tokens = _reported_count(envelope, "prompt_eval_count")
     _reject_incomplete(
         envelope,
@@ -252,9 +264,10 @@ def _parse_chat_response(
         prompt_tokens=prompt_tokens,
         context_tokens=context_tokens,
         max_tokens=max_tokens,
+        retries=retries,
     )
     return Completion(
-        data=_parse_content(envelope, model=model),
+        data=_parse_content(envelope, model=model, retries=retries),
         output_tokens=_reported_count(envelope, "eval_count"),
         prompt_tokens=prompt_tokens,
         retries=retries,
@@ -262,13 +275,26 @@ def _parse_chat_response(
     )
 
 
-def _read_envelope(response: httpx.Response, *, model: str) -> Mapping[str, Any]:
+def _read_envelope(
+    response: httpx.Response, *, model: str, retries: int = 0
+) -> Mapping[str, Any]:
+    """The envelope, or the malformed failure carrying what it cost.
+
+    ``retries`` is carried onto the raised error for the reason
+    :class:`~council.agents.provider.RetriedError` exists: the retries happen
+    before anything is parsed, so a malformed envelope that followed one or more of
+    them cost those requests, and the stored row is where that cost is reported.
+    """
     try:
         envelope = response.json()
     except ValueError as exc:
-        raise MalformedOutputError(f"{model}: /api/chat did not return JSON") from exc
+        raise MalformedOutputError(
+            f"{model}: /api/chat did not return JSON", retries=retries
+        ) from exc
     if not isinstance(envelope, Mapping):
-        raise MalformedOutputError(f"{model}: /api/chat returned a {type(envelope).__name__}")
+        raise MalformedOutputError(
+            f"{model}: /api/chat returned a {type(envelope).__name__}", retries=retries
+        )
     return envelope
 
 
@@ -279,8 +305,15 @@ def _reject_incomplete(
     prompt_tokens: int,
     context_tokens: int,
     max_tokens: int,
+    retries: int = 0,
 ) -> None:
-    """Refuse an envelope whose text is present but cannot be trusted."""
+    """Refuse an envelope whose text is present but cannot be trusted.
+
+    ``retries`` is carried onto the raised error for the reason
+    :class:`~council.agents.provider.RetriedError` exists: a truncation that
+    followed one or more transport retries cost those requests, and the stored row
+    is where that cost is reported.
+    """
     reason = envelope.get("done_reason")
     if reason is None:
         # An absent field is not a truncation. Reading it as one would turn a
@@ -295,7 +328,8 @@ def _reject_incomplete(
             )
     elif reason != "stop":
         raise TruncatedGenerationError(
-            f"{model}: generation ended with done_reason={reason!r}, so the JSON is incomplete"
+            f"{model}: generation ended with done_reason={reason!r}, so the JSON is incomplete",
+            retries=retries,
         )
 
     # Ollama truncates an oversized prompt instead of refusing it, so a prompt
@@ -306,20 +340,30 @@ def _reject_incomplete(
         raise ContextOverflowError(
             f"{model}: prompt used {prompt_tokens} of {context_tokens} context tokens "
             f"with {max_tokens} reserved for output, so the head of the conversation "
-            "-- the persona -- was dropped"
+            "-- the persona -- was dropped",
+            retries=retries,
         )
 
 
-def _parse_content(envelope: Mapping[str, Any], *, model: str) -> dict[str, Any]:
+def _parse_content(
+    envelope: Mapping[str, Any], *, model: str, retries: int = 0
+) -> dict[str, Any]:
+    """The completion object, or the malformed failure carrying what it cost.
+
+    ``retries`` is carried for the same reason it is in :func:`_read_envelope`.
+    """
     message = envelope.get("message")
     content = str(message.get("content", "")) if isinstance(message, Mapping) else ""
     try:
         parsed = json.loads(content)
     except ValueError as exc:
-        raise MalformedOutputError(f"{model}: content was not JSON: {content[:200]!r}") from exc
+        raise MalformedOutputError(
+            f"{model}: content was not JSON: {content[:200]!r}", retries=retries
+        ) from exc
     if not isinstance(parsed, dict):
         raise MalformedOutputError(
-            f"{model}: expected a JSON object, got a {type(parsed).__name__}: {content[:200]!r}"
+            f"{model}: expected a JSON object, got a {type(parsed).__name__}: {content[:200]!r}",
+            retries=retries,
         )
     return parsed
 

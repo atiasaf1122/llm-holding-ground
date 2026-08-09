@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -19,13 +20,20 @@ from council.agents.mock import MockProvider
 from council.agents.prompt import PEER_HEADER
 from council.agents.provider import Completion, Provider, ProviderUnavailableError
 from council.config import Settings, get_settings
+from council.data.prices import load_prices
 from council.debate.compositions import balanced_design
 from council.debate.sweep import placebo_pool_for, run_debate_arms
 from council.domain.signal import Arm
 from council.evaluation.aggregation import mean
 from council.evaluation.dispersion import is_contested
 from council.evaluation.frames import frame_to_rows
-from council.pipeline import open_store, run_experiment, select_contested, stored_decisions
+from council.pipeline import (
+    load_or_synthesise_prices,
+    open_store,
+    run_experiment,
+    select_contested,
+    stored_decisions,
+)
 from council.planning import TREATMENT_ARMS
 from council.scoring import ExperimentResults, arm_exposures, evaluate_experiment, rows_in_arm
 from helpers_pipeline import (
@@ -190,8 +198,8 @@ def test_a_debate_arm_keeps_the_control_view_where_no_debate_was_held(
     committees = balanced_design(models=settings.agent_models)
     contested = {point.point for point in select_contested(decisions, settings=settings)}
 
-    control = arm_exposures(rows, compositions=committees, arm=Arm.INDEPENDENT, rule=mean)
-    treated = arm_exposures(rows, compositions=committees, arm=Arm.DEBATE, rule=mean)
+    control, _ = arm_exposures(rows, compositions=committees, arm=Arm.INDEPENDENT, rule=mean)
+    treated, _ = arm_exposures(rows, compositions=committees, arm=Arm.DEBATE, rule=mean)
 
     assert set(control) == set(treated)
     assert all(control[point] == treated[point] for point in control if point not in contested)
@@ -322,6 +330,9 @@ def test_a_conversation_that_loses_a_whole_round_is_counted_as_abandoned(
     # fails stops the debate from inside rather than by raising, and counting that as
     # a conversation held books the *worst* outcome as a success -- while three of
     # four seats failing, which is strictly better, still raises and is counted.
+    # At the pinned cap of one rebuttal round the emptied round is the last one, so
+    # this only holds because `run_debate` reads the stop condition after taking a
+    # round rather than only at the top of the next iteration.
     run_independent(settings, prices)
     store = open_store(settings)
     decisions = stored_decisions(store)
@@ -335,9 +346,6 @@ def test_a_conversation_that_loses_a_whole_round_is_counted_as_abandoned(
             provider_factory=_mute_factory,
             store=store,
             arms=(Arm.DEBATE,),
-            # Two rounds, because a round that loses every speaker can only be
-            # noticed by the round after it.
-            rebuttal_rounds=2,
         )
     )
 
@@ -407,6 +415,52 @@ def test_the_pipeline_runs_end_to_end_from_a_price_file(
     assert outcome.decision_count > 0
     assert outcome.arm(Arm.DEBATE).metrics.periods > 0
     assert outcome.contested_points > 0
+
+
+def test_the_debate_sweep_refuses_a_store_written_under_another_lookback(
+    settings: Settings, prices: pd.DataFrame
+) -> None:
+    # The same guard the independent sweep applies, wired into the other sweep. Its
+    # rows land in the same parquet, so a debate resumed under a changed lookback
+    # would leave one arm holding two treatments just as readily.
+    run_independent(settings, prices)
+    shortened = settings.model_copy(update={"lookback_days": settings.lookback_days - 2})
+
+    with pytest.raises(ValueError, match="prompt-defining configuration"):
+        run_debates(shortened, prices)
+
+
+# -- the prices a run scores against are the prices on disk -----------------------
+
+
+def test_a_persisted_synthetic_frame_is_returned_rather_than_regenerated(
+    settings: Settings,
+) -> None:
+    # The backtest fills at `open` and the dashboard reads prices off disk. A
+    # function that persisted only when the file was absent but always returned a
+    # freshly synthesised frame let `evaluate --synthetic` and the dashboard score
+    # the same decisions against different fill prices.
+    first = load_or_synthesise_prices(settings, synthetic=True, persist=True)
+    on_disk = load_prices(settings.prices_path)
+    # Any change to a generator input -- the seed here, the date range in the test
+    # below -- used to produce a different frame in memory from the one the
+    # dashboard reads, because the file was written only when absent.
+    regenerated = settings.model_copy(update={"seed": settings.seed + 1})
+
+    second = load_or_synthesise_prices(regenerated, synthetic=True, persist=True)
+
+    pd.testing.assert_frame_equal(first, on_disk)
+    pd.testing.assert_frame_equal(second, on_disk)
+
+
+def test_widening_the_range_over_a_persisted_price_file_fails_loudly(
+    settings: Settings,
+) -> None:
+    load_or_synthesise_prices(settings, synthetic=True, persist=True)
+    widened = settings.model_copy(update={"end": date(2030, 12, 31)})
+
+    with pytest.raises(ValueError, match="does not cover the configured"):
+        load_or_synthesise_prices(widened, synthetic=True, persist=True)
 
 
 def test_the_placebo_pool_refuses_a_frame_that_has_lost_the_peers_prose(

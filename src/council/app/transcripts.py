@@ -144,9 +144,11 @@ class Transcript:
     opening_std: float
     """Spread of the opening exposures, over every seat including the silent ones.
 
-    Population standard deviation, matching
-    :attr:`council.evaluation.dispersion.Dispersion.exposure_std` -- this is the
-    quantity that decided the point was worth debating.
+    Population standard deviation over this committee's seats in this arm at round
+    0. It is not the dispersion that gated the point --
+    :func:`council.pipeline.select_contested` measures that over the whole
+    independent arm, across every model and persona, so a uniform committee can show
+    zero spread here on a point admitted by a directional split there.
     """
 
     is_split: bool

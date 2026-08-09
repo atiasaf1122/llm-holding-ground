@@ -36,6 +36,7 @@ import pandas as pd
 
 from council.agents.inference import DecisionPoint, generate_decision
 from council.agents.ollama import OllamaProvider
+from council.agents.prompt import build_prompt
 from council.agents.provider import Provider
 from council.agents.store import CompletionRecord, DecisionKey, DecisionStore
 from council.config import Settings
@@ -180,6 +181,63 @@ def build_contexts(
     }
 
 
+OPENING_ROUND: Final = 0
+"""The round whose prompt can be recomputed from the price frame alone.
+
+Round 0 shows no peers in any arm, and :func:`council.agents.prompt.build_prompt`
+guarantees a debate arm's opening view renders byte-identically to the control's.
+A later round's prompt carries peer text that no longer exists anywhere but the
+completions archive, so a provenance check is defined on this round and no other.
+"""
+
+
+def check_prompt_provenance(
+    *,
+    stored: Mapping[DecisionKey, str],
+    contexts: ContextIndex,
+    personas: Sequence[Persona] = PERSONAS,
+) -> None:
+    """Refuse a store whose rows answered a different prompt from the one now built.
+
+    The resume check compares :data:`~council.agents.store.KEY_COLUMNS`, and nothing
+    in that identity defines the prompt: not ``lookback_days``, not the persona
+    file's contents, not the price series. A run resumed onto a directory generated
+    under different prompt-defining settings reports every existing row as already
+    stored, generates only the newly reachable dates, and writes one arm holding two
+    different treatments -- silently, exiting 0. ``_trailing_window``'s own docstring
+    calls mixing window lengths unrecoverable after the fact, so this is checked
+    before anything is generated rather than reported afterwards.
+
+    Args:
+        stored: :meth:`council.agents.store.DecisionStore.stored_prompts`.
+        contexts: the price windows this run would build, from
+            :func:`build_contexts`. Rows outside it cannot be checked and are
+            skipped: the run is not about to write over them either.
+
+    Raises:
+        ValueError: naming the first row whose stored digest differs from the one
+            this configuration renders.
+    """
+    by_name = {persona.name: persona for persona in personas}
+    for key in sorted(stored):
+        decision_date, ticker, model, persona_name, _arm, round_index, _composition = key
+        persona = by_name.get(persona_name)
+        window = contexts.get((ticker, decision_date))
+        if round_index != OPENING_ROUND or persona is None or window is None:
+            continue
+        expected = build_prompt(persona=persona, price_context=window).prompt_hash
+        if expected != stored[key]:
+            raise ValueError(
+                f"the stored decision for {model}/{persona_name} on {ticker} "
+                f"{decision_date} answered prompt {stored[key]} and this "
+                f"configuration renders {expected}: the prompt-defining "
+                "configuration -- the lookback window, the persona files, the price "
+                "series -- has changed since these rows were generated. A resume "
+                "would leave one arm holding two different treatments, which is "
+                "unrecoverable after the fact; regenerate the directory"
+            )
+
+
 # -- the sweep ------------------------------------------------------------------
 
 
@@ -238,6 +296,7 @@ class GenerationRunner:
             dates=plan.decision_dates,
             lookback_days=self._settings.lookback_days,
         )
+        check_prompt_provenance(stored=self._store.stored_prompts(), contexts=contexts)
 
         tallies: list[tuple[str, _Tally]] = []
         for model in plan.models:

@@ -148,10 +148,16 @@ def test_the_control_survives_narrowing_so_the_committee_has_something_to_be_rea
 # -- which number is the declared one ----------------------------------------
 
 
-def test_the_pooled_equity_panel_is_marked_as_the_declared_comparison(full_run: Path) -> None:
+def test_the_pooled_equity_panel_is_marked_as_the_secondary_declared_comparison(
+    full_run: Path,
+) -> None:
+    # Two declared outcomes, one primary. The equity comparison and the shift rate
+    # are different quantities and only one can decide the result; labelling both
+    # primary is the freedom a pre-registration exists to remove.
     app = page()
 
-    assert f"{DECLARED} primary comparison" in successes(app)
+    assert f"{DECLARED} secondary declared comparison" in successes(app)
+    assert f"{DECLARED} primary comparison" not in successes(app)
     assert "council evaluate" in successes(app)
 
 
@@ -170,7 +176,7 @@ def test_choosing_one_committee_demotes_the_equity_panel_to_exploratory(
     app.sidebar.selectbox[0].select("rotation-1").run()
 
     assert "Exploratory cut, not the declared comparison" in warnings(app)
-    assert f"{DECLARED} primary comparison" not in successes(app)
+    assert f"{DECLARED} secondary declared comparison" not in successes(app)
 
 
 def test_a_non_declared_aggregation_rule_demotes_the_equity_panel_too(
@@ -245,7 +251,10 @@ def test_the_transcript_metrics_name_the_seats_they_cover(full_run: Path) -> Non
     app = page()
     labels = [element.label for element in app.metric]
 
-    assert "opening dispersion (all seats)" in labels
+    # "(all seats)" read as the gate `select_contested` applies, which is measured
+    # over the whole independent arm; this figure covers one committee in one arm.
+    assert "opening dispersion (all seats)" not in labels
+    assert "opening dispersion (this committee)" in labels
     assert "committee before (speaking seats)" in labels
     assert "committee after (speaking seats)" in labels
 

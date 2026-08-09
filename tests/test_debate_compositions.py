@@ -51,8 +51,10 @@ def test_each_rotation_seats_every_persona_once_when_the_committee_is_four_wide(
 
 
 def test_the_balance_holds_for_a_committee_narrower_than_the_persona_set() -> None:
-    # Arrange -- the configured default is two models, not four.
-    two_models = ("qwen3:8b", "gemma4:latest")
+    # Arrange -- a committee narrower than the persona set. The shipped configuration
+    # is four models wide, so this case is hypothetical; it is pinned because the
+    # arithmetic supports it.
+    two_models = ("alpha", "beta")
 
     # Act
     pairings = Counter(
@@ -129,8 +131,17 @@ def test_a_repeated_model_is_rejected() -> None:
 
 
 def test_an_empty_committee_is_rejected() -> None:
-    with pytest.raises(ValueError, match="at least one model"):
+    with pytest.raises(ValueError, match="a committee needs models"):
         rotations(models=())
+
+
+def test_a_one_seat_committee_is_rejected() -> None:
+    # A single seat is accepted by the arithmetic and doomed by the protocol:
+    # `_check_someone_spoke` requires two surviving opening views, so every
+    # conversation costs one opening turn per point per arm and is then abandoned,
+    # while `plan_experiment` bills those turns as productive.
+    with pytest.raises(ValueError, match="at least two seats"):
+        rotations(models=("solo",))
 
 
 def test_a_repeated_persona_is_rejected() -> None:

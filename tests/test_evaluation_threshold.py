@@ -8,10 +8,13 @@ findings rested on the difference. So this file sweeps the grid instead of sampl
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
+from council.debate.protocol import _agreed
 from council.evaluation.persuasion import Shift
-from council.evaluation.threshold import TOLERANCE, exceeds, meets
+from council.evaluation.threshold import TOLERANCE, exceeds, meets, within
 
 # Exposures are constrained to [-1, 1] and models answer overwhelmingly in multiples
 # of 0.05, so this is the space the comparison actually operates in.
@@ -105,3 +108,44 @@ class TestShiftUsesIt:
     @pytest.mark.parametrize(("opening", "closing"), pairs_apart(0.15))
     def test_a_shift_short_of_the_bar_is_not(self, opening: float, closing: float) -> None:
         assert not shift(opening, closing).shifted
+
+
+class TestWithinIsTheInclusiveAtMost:
+    def test_every_gap_of_exactly_the_bar_is_inside_it(self) -> None:
+        # The same boundary as `meets`, read from the other side: a spread *of* the
+        # bar is agreement. `_agreed` used to spell this `meets(bar, distance)`,
+        # which gives the right answer and reads as its opposite.
+        candidates = pairs_apart(BAR)
+        assert candidates, "the grid must contain gaps of exactly the bar"
+        for low, high in candidates:
+            assert within(abs(low - high), BAR)
+
+    def test_every_gap_beyond_the_bar_is_outside_it(self) -> None:
+        for low, high in pairs_apart(0.25):
+            assert not within(abs(low - high), BAR)
+
+    def test_every_gap_short_of_the_bar_is_inside_it(self) -> None:
+        for low, high in pairs_apart(0.15):
+            assert within(abs(low - high), BAR)
+
+    def test_the_two_orders_are_not_the_same_question(self) -> None:
+        # Why the argument order is worth a named function. Reversed, the call is
+        # still true -- for a different reason and with the parameters lying about
+        # which value is which.
+        assert within(0.25, 0.20) is False
+        assert meets(0.20, 0.25) is False
+        assert within(0.20, 0.25) is True
+        assert meets(0.25, 0.20) is True
+
+    def test_within_is_the_complement_of_exceeds(self) -> None:
+        for distance in (0.0, 0.15, BAR, 0.25, 1.0):
+            assert within(distance, BAR) is not exceeds(distance, BAR)
+
+
+def test_agreement_is_measured_with_within_and_not_with_a_reversed_meets() -> None:
+    # The one function whose inversion turns "agreed" into "still apart", pinned
+    # against the shipped source: every other call site in the package passes the
+    # measured distance first and the configured bar second.
+    source = inspect.getsource(_agreed)
+    assert "within(max(exposures) - min(exposures), spread)" in source
+    assert "meets(" not in source

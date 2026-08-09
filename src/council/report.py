@@ -25,11 +25,28 @@ from council.evaluation.calibration import CalibrationReport
 from council.evaluation.influence import InfluenceMatrix
 from council.evaluation.persuasion import ShiftRateReport
 from council.evaluation.windows import WindowComparison
-from council.planning import ExperimentPlan
+from council.planning import TREATMENT_ARMS, ExperimentPlan
 from council.scoring import PRIMARY_RULE, ArmOutcome, ExperimentResults
 
 RIGHT = ">"
 LEFT = "<"
+
+
+def _declared_order(mapping: Mapping[str, Any]) -> list[str]:
+    """The treatment arms in the order the experiment declares them, then the rest.
+
+    One report used to order the arms two ways: :func:`_arms_table` iterates
+    ``results.arms`` and gets debate, rationale-only, placebo, while the shift,
+    window and influence blocks sorted the keys and got debate, placebo,
+    rationale-only. :data:`council.app.curves.SCORED_ARMS` asserts the opposite
+    guarantee -- that the panel and the results table list the arms identically --
+    so the declared tuple is what every block reads.
+
+    Anything the tuple does not name is sorted after it rather than dropped: an
+    unrecognised label is a fact about the frame and the reader has to see it.
+    """
+    declared = [str(arm) for arm in TREATMENT_ARMS]
+    return [arm for arm in declared if arm in mapping] + sorted(set(mapping) - set(declared))
 
 
 def render_table(
@@ -156,11 +173,20 @@ def render_results(results: ExperimentResults) -> str:
         + ("*" if exploratory else ""),
         f"{format_count(results.decision_count)} stored decisions; "
         f"{format_count(results.contested_points)} contested points "
-        f"({results.contested_share:.1%} of the calendar).",
+        f"({results.contested_share:.1%} of the decision points)"
+        f"; scored over prices {results.calendar_start} to {results.calendar_end}, "
+        f"{format_count(results.session_count)} sessions; "
+        f"{_decision_span(results)}.",
         "",
         _arms_table(results),
         "",
-        _shift_table(results.shift_rates),
+        _shift_table(
+            results.shift_rates,
+            results.debated_points,
+            dropped_pairs=results.dropped_pairs,
+            unpaired=results.unpaired,
+            short_committee_points=results.short_committee_points,
+        ),
         "",
         _windows_block(results.windows),
         "",
@@ -171,6 +197,22 @@ def render_results(results: ExperimentResults) -> str:
     return "\n".join(sections)
 
 
+def _decision_span(results: ExperimentResults) -> str:
+    """The dates decisions were made on, beside the price range they were scored over.
+
+    Named separately because the two come apart. An interrupted ``generate`` leaves
+    prices covering the configured range and decisions covering a fraction of it,
+    and every backtest period before the first decision is flat in every arm -- so
+    a header naming the price range alone reads as a run that covered it.
+    """
+    if results.decision_start is None or results.decision_end is None:
+        return "no decision dates"
+    return (
+        f"decisions {results.decision_start} to {results.decision_end}, "
+        f"{format_count(results.decision_date_count)} dates"
+    )
+
+
 def _results_notes(results: ExperimentResults) -> list[str]:
     """What the tables cannot say in a column, said underneath them.
 
@@ -178,11 +220,33 @@ def _results_notes(results: ExperimentResults) -> list[str]:
     stated under the declared rule and one stated under a rule chosen after the
     data was visible are different kinds of number, and a reader handed a
     ``--rule median`` table has no other way to tell which they are holding.
+
+    The equity comparison is labelled **secondary**. Two quantities are declared in
+    the README and only one can decide the result; the primary outcome is the shift
+    rate, which involves no returns and which "net of costs" cannot qualify. This
+    line used to attach "Pre-registered comparison" to the arms table, so both
+    declared outcomes carried the primary label and whichever came out favourable
+    could be reported as the pre-registered one.
     """
     notes = [
-        f"Pre-registered comparison: {Arm.DEBATE} against {Arm.INDEPENDENT}, "
-        f"under {PRIMARY_RULE} aggregation. Everything else here is exploratory."
+        f"Secondary declared comparison: {Arm.DEBATE} against {Arm.INDEPENDENT}, "
+        f"under {PRIMARY_RULE} aggregation, net of costs. The primary outcome is "
+        "the shift rate above. Everything else here is exploratory."
     ]
+    unmatched = [outcome.arm for outcome in results.arms if outcome.baseline is None]
+    if unmatched:
+        # The dash in the `random Sharpe` column means two different things in one
+        # table: an absent null here, and "not applicable" in the buy_and_hold row
+        # directly underneath. The only statement of the reason was a log line that
+        # never reached the report, and results.json records `"baseline": null`
+        # with no reason either.
+        notes.append(
+            "No turnover-matched random baseline for "
+            + ", ".join(unmatched)
+            + ": the null draws from the arm's own exposures, and no subset of its "
+            "revision dates reaches its turnover. That dash is an absent null, not "
+            "a zero, and not the 'not applicable' the buy_and_hold row's dash means."
+        )
     if results.aggregation_rule != PRIMARY_RULE:
         notes.append(
             f"* exploratory: this table is scored under {results.aggregation_rule} "
@@ -220,9 +284,44 @@ def _arms_table(results: ExperimentResults) -> str:
     )
 
 
-def _shift_table(shift_rates: Mapping[str, ShiftRateReport]) -> str:
-    """Shift rate by the confidence held before the debate: the primary statistic."""
-    arms = sorted(shift_rates)
+def _shift_table(
+    shift_rates: Mapping[str, ShiftRateReport],
+    debated_points: Mapping[str, int],
+    *,
+    dropped_pairs: Mapping[str, int] | None = None,
+    unpaired: Mapping[str, int] | None = None,
+    short_committee_points: Mapping[str, int] | None = None,
+) -> str:
+    """Shift rate by the confidence held before the debate: the primary statistic.
+
+    The bar is printed in the caption, which is what
+    :attr:`council.evaluation.persuasion.Shift.threshold` exists for: a shift rate
+    cannot be read without knowing what counted as a shift, and a rate published
+    beside no bar is the drift that attribute was added to prevent.
+
+    The decision points each arm debated are printed underneath, because the placebo
+    arm abandons every contested point with no usable earlier donor, so part of any
+    debate-minus-placebo gap is coverage rather than persuasion -- and
+    :attr:`council.scoring.ArmOutcome.point_count` cannot show it.
+
+    Each cell carries both denominators. ``obs`` is the unit the statistic is
+    declared over; ``pts`` is the distinct decision points behind them, and every
+    point is answered once per seat of every committee, so the observations repeat.
+    ``debated_points`` underneath cannot supply this: it is per arm, not per band.
+
+    The pairs the rate's denominator lost are printed underneath too, when there
+    are any. The drop is not random across the arms -- round 1 only exists in the
+    debate arms, so a crashed round 1 lands its phantom shift entirely on the
+    treatment -- and both counts previously reached the dashboard's coverage table
+    and neither the CLI nor ``results.json``.
+
+    The points the *exposure series* lost sit on the same line, for the same reason
+    and with a heavier consequence: a committee short of one post-debate row is
+    dropped by :func:`council.scoring.committee_exposures` and the point falls back
+    to that committee's independent view, so a conversation that happened is scored
+    as the control it is being compared against.
+    """
+    arms = _declared_order(shift_rates)
     if not arms:
         return "No debate rounds stored, so there is no shift rate to report."
     bands = shift_rates[arms[0]].bands
@@ -231,37 +330,65 @@ def _shift_table(shift_rates: Mapping[str, ShiftRateReport]) -> str:
             band.band.label,
             *(
                 f"{format_ratio(shift_rates[arm].bands[index].shift_rate)}"
-                f" ({shift_rates[arm].bands[index].count})"
+                f" ({shift_rates[arm].bands[index].count} obs"
+                f" / {shift_rates[arm].bands[index].point_count} pts)"
                 for arm in arms
             ),
         ]
         for index, band in enumerate(bands)
     ]
-    return "\n".join(
-        [
-            "Shift rate by prior confidence (count in brackets)",
-            render_table(
-                ("prior confidence", *arms),
-                rows,
-                aligns=(LEFT, *(RIGHT for _ in arms)),
-            ),
-        ]
+    bar = next(
+        (report.threshold for report in shift_rates.values() if report.threshold is not None),
+        None,
     )
+    caption = (
+        "Shift rate by prior confidence (observations / decision points in brackets)"
+        if bar is None
+        else (
+            f"Shift rate by prior confidence, bar {bar:.2f} "
+            "(observations / decision points in brackets)"
+        )
+    )
+    lines = [
+        caption,
+        render_table(
+            ("prior confidence", *arms),
+            rows,
+            aligns=(LEFT, *(RIGHT for _ in arms)),
+        ),
+        "Decision points debated: "
+        + ", ".join(f"{arm} {format_count(debated_points.get(arm, 0))}" for arm in arms),
+    ]
+    dropped = dropped_pairs or {}
+    orphaned = unpaired or {}
+    short = short_committee_points or {}
+    if any(dropped.values()) or any(orphaned.values()) or any(short.values()):
+        lines.append(
+            "Pairs dropped for a failed generation: "
+            + ", ".join(f"{arm} {format_count(dropped.get(arm, 0))}" for arm in arms)
+            + "; rows with no partner round: "
+            + ", ".join(f"{arm} {format_count(orphaned.get(arm, 0))}" for arm in arms)
+            + "; points scored as the control for a committee short of a seat or "
+            "absent from this arm: "
+            + ", ".join(f"{arm} {format_count(short.get(arm, 0))}" for arm in arms)
+        )
+    return "\n".join(lines)
 
 
 def _windows_block(windows: Mapping[str, WindowComparison]) -> str:
     lines = ["Windows won against the independent arm"]
     lines += [
-        f"  {arm}: {comparison.summary}"
-        + (f", {comparison.ties} tied" if comparison.ties else "")
-        for arm, comparison in sorted(windows.items())
+        f"  {arm}: {windows[arm].summary}"
+        + (f", {windows[arm].ties} tied" if windows[arm].ties else "")
+        for arm in _declared_order(windows)
     ]
     return "\n".join(lines)
 
 
 def _influence_block(influence: Mapping[str, InfluenceMatrix]) -> str:
     lines = ["Net influence (concessions won minus made)"]
-    for arm, matrix in sorted(influence.items()):
+    for arm in _declared_order(influence):
+        matrix = influence[arm]
         scores = ", ".join(f"{model} {score:+d}" for model, score in matrix.net_influence)
         lines.append(f"  {arm}: {scores or 'no concessions'}")
     return "\n".join(lines)
@@ -306,9 +433,31 @@ def _finite_or_name(value: float) -> float | str:
 def _results_payload(results: ExperimentResults) -> dict[str, Any]:
     return {
         "aggregation_rule": results.aggregation_rule,
+        # Which calendar this artefact scored. Provenance, not a measurement: a
+        # published results file that records decision counts and per-arm periods
+        # but names neither end of the period they were counted over cannot show
+        # that a run covered six months of a two-year configured range.
+        "calendar": {
+            "start": results.calendar_start.isoformat(),
+            "end": results.calendar_end.isoformat(),
+            "sessions": results.session_count,
+        },
+        # And which dates decisions were made on, which is not the same span. The
+        # calendar above is the price file's range, so on its own it catches a short
+        # run only when the prices are short -- not when an interrupted generate
+        # leaves a full price range holding a fraction of a run's decisions.
+        "decisions": {
+            "start": None if results.decision_start is None else results.decision_start.isoformat(),
+            "end": None if results.decision_end is None else results.decision_end.isoformat(),
+            "dates": results.decision_date_count,
+        },
         "contested_share": results.contested_share,
         "contested_points": results.contested_points,
         "decision_count": results.decision_count,
+        "debated_points": dict(results.debated_points),
+        "dropped_pairs": dict(results.dropped_pairs),
+        "short_committee_points": dict(results.short_committee_points),
+        "unpaired_rows": dict(results.unpaired),
         "buy_and_hold": asdict(results.buy_and_hold),
         "arms": [_arm_json(outcome) for outcome in results.arms],
         "shift_rates": {arm: _shift_json(report) for arm, report in results.shift_rates.items()},
@@ -337,6 +486,7 @@ def _shift_json(report: ShiftRateReport) -> dict[str, Any]:
             {
                 "band": band.band.label,
                 "count": band.count,
+                "points": band.point_count,
                 "shifted_count": band.shifted_count,
                 "reversed_count": band.reversed_count,
                 "shift_rate": band.shift_rate,
@@ -385,6 +535,14 @@ def _windows_json(comparison: WindowComparison) -> dict[str, Any]:
         "windows": [
             {
                 "index": window.index,
+                # How the period was cut. `split_windows` gives earlier windows the
+                # extra period on an uneven split, so the windows are not all the
+                # same length -- and every arm is flat over the `lookback_days - 1`
+                # warm-up, so an early window can be partly or wholly dead. Wins and
+                # ties alone cannot show either.
+                "start": window.start,
+                "stop": window.stop,
+                "length": window.length,
                 "treatment_return": window.treatment_return,
                 "control_return": window.control_return,
                 "margin": window.margin,

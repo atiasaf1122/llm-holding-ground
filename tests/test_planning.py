@@ -26,6 +26,7 @@ from council.pipeline import (
     stored_decisions,
 )
 from council.planning import (
+    ASSUMED_CONTESTED_SHARE,
     DEBATE_STAGE,
     INDEPENDENT_STAGE,
     TREATMENT_ARMS,
@@ -119,6 +120,31 @@ def test_a_plan_with_nothing_generated_marks_its_debate_stages_estimated(
     assert plan.contested_estimated
     assert plan.is_estimated
     assert [stage.estimated for stage in plan.stages] == [False, True, True, True]
+
+
+def test_the_assumed_share_does_not_understate_every_share_this_design_measures(
+    settings: Settings, prices: pd.DataFrame
+) -> None:
+    # The docstring said half "exists so that a first plan overstates the debate arms
+    # rather than tempting somebody into a night that turns out to be three". Every
+    # contested share this design has measured is at or near 100% -- findings.md
+    # section 2, CLAIMS C14 -- so half halved the debate budget instead.
+    run_independent(settings, prices)
+    measured = contested_points(settings)
+
+    guess = plan_experiment(settings=settings, prices=prices, store=open_store(settings))
+    counted = plan_experiment(
+        settings=settings,
+        prices=prices,
+        store=open_store(settings),
+        contested=measured,
+    )
+
+    assert ASSUMED_CONTESTED_SHARE == 1.0
+    assert guess.contested_points == guess.decision_points
+    assert guess.contested_points >= counted.contested_points
+    for assumed, exact in zip(guess.stages[1:], counted.stages[1:], strict=True):
+        assert assumed.inferences >= exact.inferences, assumed.arm
 
 
 def test_a_plan_taken_after_generation_is_no_longer_an_estimate(

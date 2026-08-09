@@ -158,6 +158,17 @@ class ConfidenceShiftRate:
 
     band: Band
     count: int
+    point_count: int
+    """Distinct ``(decision_date, ticker)`` behind this band's observations.
+
+    ``count`` is the unit the primary statistic is declared over, and it is not a
+    sample size: every contested decision point is answered once per seat of every
+    committee, so one point contributes as many observations as the design has
+    seats. Carried beside ``count`` rather than recomputed by whichever reader
+    happens to want it, so the published artefact, the CLI table and the dashboard
+    cannot disagree about the denominator behind one rate.
+    """
+
     shifted_count: int
     reversed_count: int
     total_distance: float
@@ -223,6 +234,7 @@ def shift_rate_by_confidence(
 
     bands = make_bands(edges)
     counts = [0] * len(bands)
+    points: list[set[tuple[date, str]]] = [set() for _ in bands]
     shifted = [0] * len(bands)
     reversed_ = [0] * len(bands)
     distance = [0.0] * len(bands)
@@ -234,6 +246,7 @@ def shift_rate_by_confidence(
             skipped += 1
             continue
         counts[index] += 1
+        points[index].add((shift.decision_date, shift.ticker))
         shifted[index] += int(shift.shifted)
         reversed_[index] += int(shift.reversed_sign)
         distance[index] += shift.distance
@@ -243,12 +256,13 @@ def shift_rate_by_confidence(
             ConfidenceShiftRate(
                 band=band,
                 count=count,
+                point_count=len(seen),
                 shifted_count=shift_count,
                 reversed_count=reversal_count,
                 total_distance=total,
             )
-            for band, count, shift_count, reversal_count, total in zip(
-                bands, counts, shifted, reversed_, distance, strict=True
+            for band, count, seen, shift_count, reversal_count, total in zip(
+                bands, counts, points, shifted, reversed_, distance, strict=True
             )
         ),
         skipped_count=skipped,

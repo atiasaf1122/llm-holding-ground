@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from council.agents.mock import MockProvider
@@ -165,6 +166,28 @@ def test_debating_before_generating_fails_rather_than_reporting_success(
     code, _ = run("debate", data_dir=tmp_path)
 
     assert code == EXIT_FAILURE
+
+
+def test_debating_over_a_half_swept_control_fails_rather_than_selecting_from_a_slice(
+    tmp_path: Path,
+) -> None:
+    # `plan_experiment` already discards a contested set measured over an unfinished
+    # control -- "a measurement of the half rather than a sample" -- and falls back
+    # to the assumed share. `debate` measured the same set from the same store with
+    # no such check and committed the GPU to it. The sweep runs model then persona
+    # then ticker, so an interruption removes whole personas, which is exactly what
+    # collapses the directional split `is_contested` rests on: at the extreme the
+    # command prints "0 contested point(s) to debate" and exits 0.
+    run("generate", data_dir=tmp_path)
+    decisions = pd.read_parquet(tmp_path / "decisions.parquet")
+    kept = decisions.loc[~decisions["persona"].str.startswith("reversion")]
+    assert 0 < len(kept) < len(decisions)
+    kept.to_parquet(tmp_path / "decisions.parquet", index=False)
+
+    code, printed = run("debate", data_dir=tmp_path)
+
+    assert code == EXIT_FAILURE
+    assert "contested point(s) to debate" not in printed
 
 
 def test_evaluating_before_generating_fails_rather_than_reporting_success(

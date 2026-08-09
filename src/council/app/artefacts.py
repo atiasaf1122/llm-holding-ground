@@ -42,10 +42,11 @@ DASHBOARD_COLUMNS: Final[tuple[str, ...]] = (*REQUIRED_COLUMNS, RATIONALE)
 ARM_ORDER: Final[tuple[str, ...]] = tuple(str(arm) for arm in Arm)
 """Arms in the order :class:`~council.domain.signal.Arm` declares them.
 
-Taken from the enum rather than written out, so that a panel cannot order the
-arms differently from another panel, and so that the debate arm and its placebo
-always sit next to each other -- the gap between those two is the finding, and a
-reader should not have to hunt across a table for it.
+Taken from the enum rather than written out, so that a panel cannot order the arms
+differently from another panel. It is the declared order and nothing more: the enum
+runs independent, debate, rationale-only, placebo, so the debate arm and its placebo
+are not adjacent, and a reader comparing those two does have to cross the
+rationale-only column to do it.
 """
 
 DECISIONS_SOURCE: Final = (

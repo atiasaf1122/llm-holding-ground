@@ -54,12 +54,26 @@ is the one figure here that is a guess rather than arithmetic, which is why it i
 a parameter of every function that uses it and a flag on the command line.
 """
 
-ASSUMED_CONTESTED_SHARE: Final = 0.5
+ASSUMED_CONTESTED_SHARE: Final = 1.0
 """Share of decision points assumed contested when nothing has been generated yet.
 
-Half is deliberately unflattering: it is the middle of the range, not a prediction,
-and it exists so that a first plan overstates the debate arms rather than tempting
-somebody into a night that turns out to be three.
+Every contested share this design has measured is at or near 100% -- see
+``docs/findings.md`` section 2 and ``docs/CLAIMS.md`` C14 -- because the crossed
+personas split on direction at nearly every point. Assuming every decision point is
+contested is therefore the value that actually overstates the debate arms, which is
+what this constant is for: a first plan should tempt nobody into a night that turns
+out to be three. Half, its previous value, halved the debate budget at every share
+the design has ever produced and understated the bill in exactly the direction the
+guard was meant to protect against.
+
+Those shares are **pooled-grid** shares, and this constant is the right place to say
+so. :func:`council.pipeline.select_contested` measures dispersion once over the whole
+independent arm -- every model crossed with every persona -- and
+:func:`council.debate.sweep.run_debate_arms` applies that one list unchanged to every
+committee, so the plan and the sweep both spend at the pooled share. Per committee the
+same run gives 449 of 1,120, 40% (``docs/CLAIMS.md`` C14). That is the figure a
+per-committee gate would spend at, and no such gate exists; assuming the pooled share
+therefore still overstates rather than understates what this code will run.
 """
 
 INDEPENDENT_STAGE: Final = "generate"
@@ -160,7 +174,7 @@ def plan_experiment(
     decisions: pd.DataFrame | None = None,
     compositions: Sequence[Composition] | None = None,
     personas: Sequence[Persona] = PERSONAS,
-    rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
+    rebuttal_rounds: int | None = None,
     seconds_per_inference: float = SECONDS_PER_INFERENCE,
     assumed_contested_share: float = ASSUMED_CONTESTED_SHARE,
 ) -> ExperimentPlan:
@@ -176,7 +190,13 @@ def plan_experiment(
             the placebo arm can actually draw a donor for. Omitted, the placebo
             stage counts every contested point, which is what the sweep would
             spend only if every point had a donor.
+        rebuttal_rounds: defaults to ``settings.max_debate_rounds``, the same
+            resolution :func:`council.debate.sweep.run_debate_arms` makes, so a plan
+            and the run it prices cannot disagree about the length of a
+            conversation.
     """
+    if rebuttal_rounds is None:
+        rebuttal_rounds = settings.max_debate_rounds
     committees = tuple(
         balanced_design(models=settings.agent_models) if compositions is None else compositions
     )
@@ -312,4 +332,8 @@ def _points_the_sweep_will_hold(
     from council.debate.sweep import has_donor, placebo_pool_for
 
     pool = placebo_pool_for(decisions, composition=composition)
-    return tuple(point for point in contested if has_donor(pool, point, min_gap=min_gap))
+    return tuple(
+        point
+        for point in contested
+        if has_donor(pool, point, required_seats=composition.size, min_gap=min_gap)
+    )

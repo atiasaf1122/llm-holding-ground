@@ -248,6 +248,89 @@ async def test_a_daemon_that_keeps_failing_gives_up_after_the_configured_attempt
 
     assert len(attempts) == 3
     assert "HTTP 500" in str(caught.value)
+    # The structured count, not only the sentence. `Decision.retries` is a stored
+    # column and this loop is the only place the number exists, so an error that
+    # dropped it stored zero retries on exactly the rows that retried.
+    assert caught.value.retries == 2
+
+
+@pytest.mark.parametrize(
+    ("content", "envelope_is_json"),
+    [(json.dumps(SIGNAL_OUTPUT), False), ("not json at all", True)],
+)
+async def test_a_malformed_answer_after_retries_carries_what_it_cost(
+    monkeypatch: pytest.MonkeyPatch, content: str, envelope_is_json: bool
+) -> None:
+    # The MALFORMED family was the half of the retry fix that never landed:
+    # `RetriedError` carries the count and `_failed_decision` reads it, so
+    # UNAVAILABLE and TRUNCATED rows store the requests they cost, while a
+    # malformed envelope or a malformed body stored zero -- on rows that had
+    # already paid for `max_retries` transport failures.
+    monkeypatch.setattr(provider_module, "BACKOFF_BASE_SECONDS", 0.0)
+    attempts: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request)
+        if len(attempts) < 3:
+            return httpx.Response(503, text="server busy")
+        if envelope_is_json:
+            return httpx.Response(200, json=chat_envelope(content))
+        return httpx.Response(200, text="<html>not an envelope</html>")
+
+    provider = make_provider(handler, max_retries=2)
+
+    with pytest.raises(MalformedOutputError) as caught:
+        await provider.generate(system="persona", user="prices", schema=SIGNAL_SCHEMA)
+    await provider.aclose()
+
+    assert len(attempts) == 3
+    assert caught.value.retries == 2
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(404, MissingModelError), (400, ProviderUnavailableError)],
+)
+async def test_a_non_ok_status_after_retries_carries_what_it_cost(
+    monkeypatch: pytest.MonkeyPatch, status: int, expected: type[ProviderUnavailableError]
+) -> None:
+    # `_request` returns `(response, retries)` and `generate` discarded the count on
+    # both of its own raises. A 503 -- raised inside `_request` -- stored 2 while a
+    # 400 or a 404 costing the identical three requests stored 0, so the rows that
+    # retried were exactly the rows reporting zero. `MissingModelError` was not even
+    # a `RetriedError`, so the count had nowhere to go.
+    monkeypatch.setattr(provider_module, "BACKOFF_BASE_SECONDS", 0.0)
+    attempts: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request)
+        if len(attempts) < 3:
+            return httpx.Response(503, text="server busy")
+        return httpx.Response(status, json={"error": "no"})
+
+    provider = make_provider(handler, max_retries=2)
+
+    with pytest.raises(expected) as caught:
+        await provider.generate(system="persona", user="prices", schema=SIGNAL_SCHEMA)
+    await provider.aclose()
+
+    assert len(attempts) == 3
+    assert caught.value.retries == 2
+
+
+async def test_a_missing_model_is_still_a_provider_error_the_run_stops_on() -> None:
+    # `MissingModelError` became a `RetriedError` so it could carry the count.
+    # `failure_mode` branches on `ProviderError` subclasses and `preflight` raises
+    # it with a single positional argument, so the widening must not move it out of
+    # that family.
+    from council.agents.inference import failure_mode
+    from council.agents.provider import ProviderError, RetriedError
+    from council.domain.signal import FailureMode
+
+    assert issubclass(MissingModelError, RetriedError)
+    assert issubclass(MissingModelError, ProviderError)
+    assert failure_mode(MissingModelError("not pulled")) is FailureMode.UNAVAILABLE
+    assert MissingModelError("not pulled").retries == 0
 
 
 async def test_concurrent_generation_never_exceeds_the_configured_limit() -> None:
