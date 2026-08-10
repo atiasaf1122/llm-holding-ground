@@ -100,13 +100,20 @@ split, which the crossed personas produce on nearly every point, so the threshol
 little in practice).
 
 **Added in `cbf6a55`, after the results committed in `fa436fa` and `98a4020`.**
-`agreement_spread = 0.20`, `stillness_rounds = 2` and `max_debate_rounds = 1` (when a
+`agreement_spread = 0.20`, `stillness_rounds = 2` and `max_debate_rounds = 6` (when a
 conversation ends), and `placebo_min_gap_sessions = 60` (how far back a placebo donor must
 come from). Two of these were calibrated from that run's measurements rather than chosen
 blind: `agreement_spread` from its measured spreads, `placebo_min_gap_sessions` from its
 donor distances. They are declared here so a reader can check a result against them; they
 are **not** pre-registered and must not be read as such. Each carries its justification
 where it is declared.
+
+`max_debate_rounds` is a **cap, not a length**: a conversation ends on whichever of
+agreement, stillness or the cap comes first, and which one ended it is stored on every row
+of that conversation. It was pinned at 1 until the consumers that read the cap as the index
+of every conversation's last round were taught otherwise; at 1 the entrenchment verdict —
+a committee that stops moving without agreeing — needed two quiet rounds and so could not
+occur at all, which made the study's own subject unrecordable.
 
 **Why this paragraph exists.** With three aggregation rules, eight committee configurations
 and several statistical tests, something will look significant by chance. Fixing the
@@ -178,9 +185,15 @@ heard by nobody; with a fixed order you measure the order rather than the model.
 **Anonymous.** Peers are "another analyst", never "model X" — otherwise a prior about a
 named lab does the persuading.
 
-**One round.** Each agent gives an opening view, reads all peers, and gives a final view. The
-protocol can also stop on agreement or on stillness, but every shipped path pins the cap at
-one rebuttal round, so that is what runs; raising it fails loudly rather than being ignored.
+**Ended by a condition, capped at six rounds.** Each agent gives an opening view, reads all
+peers, answers — and keeps answering until the committee comes within `agreement_spread` of
+itself, stops moving for `stillness_rounds` consecutive rounds, or reaches the cap. Which of
+those ended a conversation is stored on every one of its rows, so the round count and the
+verdict are outcomes rather than settings. The cap was pinned at 1 until the consumers that
+read it as the index of every conversation's last round were taught otherwise, and at 1 the
+entrenchment verdict could not occur at all. The declared shift rate still pairs round 0 with
+round 1 — see [`docs/research.md`](docs/research.md) for why the later rounds are stored but
+not folded into it.
 
 **Only where there is disagreement.** On a point where the agents already agree, a
 conversation cannot change the committee's decision and teaches nothing. This was expected to
@@ -246,14 +259,18 @@ Named here rather than left for a reader to find.
   enough to be useful may be specific enough to recognise.
 - **A single deterministic sample per decision.** Intra-agent variance is unmeasured, so
   some of what is attributed to disagreement between agents is noise within one.
-- **The arms do not cover the same decision points.** The placebo needs a donor at least
-  `placebo_min_gap_sessions` back, so its earliest points are abandoned while the other arms
-  keep them — the first 60 decision dates in either case: 60 of 461 dates (120 of 922 points)
-  at the configured range, and 60 of 70 dates (120 of 140 contested points) on the six-month
-  slice. `council.app.tables.coverage_note` reports the gap; any debate-minus-placebo
-  difference must be read against it. The donor draw also constrains only the date, not the
-  ticker, so a debate-minus-placebo difference differences instrument identity along with day
-  relevance.
+- **The three treatment arms answer a shorter calendar than the control.** The placebo needs
+  a donor at least `placebo_min_gap_sessions` back — and, since a fresh donor is drawn for
+  every round and never repeated, one such donor per round the cap allows. Points it cannot
+  serve are withheld from **all three** arms rather than from the placebo alone, so the arms
+  cover an identical point set and no debate-minus-placebo difference is partly a difference
+  in coverage. What that costs is the first 60 decision dates in either case: 60 of 461 dates
+  (120 of 922 points) at the configured range, and 60 of 70 dates (120 of 140 contested
+  points) on the six-month slice. `council debate` prints how many points were withheld and
+  `council.app.tables.coverage_note` reports what each arm holds. The treatment arms are
+  therefore backtested over a later slice of the calendar than the independent control, which
+  keeps every point. The donor draw also constrains only the date, not the ticker, so a
+  debate-minus-placebo difference differences instrument identity along with day relevance.
 - **Every run reported here used synthetic prices.** `council.data.prices.synthetic_prices`
   generates geometric random walks over the configured calendar; this repository fetches no
   market data, and `load_prices` requires a `data/prices.parquet` the user supplies. There is

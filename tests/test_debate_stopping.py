@@ -24,6 +24,7 @@ import council.debate.sweep as council_sweep
 from council.agents.mock import MockProvider
 from council.agents.prompt import PeerView, build_prompt
 from council.agents.provider import Provider
+from council.config import get_settings
 from council.debate.compositions import Seat
 from council.debate.placebo import select_placebo_point
 from council.debate.protocol import (
@@ -32,6 +33,7 @@ from council.debate.protocol import (
     DebateTranscript,
     StopReason,
     Turn,
+    _agreed,
     _nobody_moved,
     run_debate,
 )
@@ -175,39 +177,65 @@ class TestStillness:
         assert transcript.stop_reason is StopReason.SETTLED
         assert max(exposures) - min(exposures) > 0.20
 
-    async def test_settled_is_reachable_at_the_shipped_cap_with_one_still_round(
+    async def test_settled_is_reachable_at_the_shipped_cap_and_the_shipped_stillness(
         self,
     ) -> None:
-        # Three docstrings asserted SETTLED "cannot occur in any run this repository
-        # makes" and is "Unreachable at the shipped cap, and arithmetically so". The
-        # arithmetic holds at `stillness_rounds = 2` only. The field is
-        # `Field(default=2, ge=1, le=10)`, the sweep threads the run's own value
-        # through to `run_debate`, and `COUNCIL_STILLNESS_ROUNDS=1` is a supported
-        # configuration this suite already parametrises against the sweep.
+        # The point of raising the cap. At a cap of one rebuttal round, SETTLED could
+        # not occur with the configured `stillness_rounds = 2` -- a streak of two
+        # quiet rounds needs two rebuttal rounds -- so the outcome this study is
+        # about, a committee that stops without agreeing, was unrecordable by
+        # construction. Asserted at both shipped values together, because that pair
+        # is what a run actually uses.
+        settings = get_settings()
+        assert settings.stillness_rounds == 2, "the arithmetic below assumes the shipped value"
+
         transcript = await debate(
-            [[1.0, -1.0, 1.0, -1.0]],
-            max_rounds=DEFAULT_REBUTTAL_ROUNDS,
-            stillness_rounds=1,
+            [[1.0, -1.0, 1.0, -1.0], [0.9, -0.9, 0.9, -0.9]],
+            max_rounds=settings.max_debate_rounds,
+            stillness_rounds=settings.stillness_rounds,
         )
 
         assert transcript.stop_reason is StopReason.SETTLED
-        assert transcript.rebuttal_rounds == DEFAULT_REBUTTAL_ROUNDS
+        # Round 1 moved; rounds 2 and 3 did not. Well inside the cap of six, which
+        # is what makes the reason reachable rather than the cap's own verdict.
+        assert transcript.rebuttal_rounds == 3
+        assert transcript.rebuttal_rounds < settings.max_debate_rounds
 
-    def test_the_unreachability_claim_is_qualified_by_the_bound_it_rests_on(self) -> None:
+    async def test_settled_still_needs_only_one_quiet_round_at_a_stillness_of_one(
+        self,
+    ) -> None:
+        # The other bound the reason rests on, and the one that used to be its only
+        # route: `stillness_rounds` is `Field(default=2, ge=1, le=10)` and the sweep
+        # threads the run's own value through, so `COUNCIL_STILLNESS_ROUNDS=1` is a
+        # supported configuration and one quiet rebuttal round ends the conversation.
+        transcript = await debate([[1.0, -1.0, 1.0, -1.0]], max_rounds=6, stillness_rounds=1)
+
+        assert transcript.stop_reason is StopReason.SETTLED
+        assert transcript.rebuttal_rounds == 1
+
+    def test_the_documents_no_longer_call_the_entrenchment_verdict_unreachable(self) -> None:
+        # Three docstrings said SETTLED "cannot occur in any run this repository
+        # makes" and was "Unreachable at the shipped cap, and arithmetically so".
+        # That was true, and it was a defect in the experiment rather than a fact
+        # worth documenting. The claim has to go with the cap that made it true, or
+        # the next reader is told the study cannot report its own subject.
         from council.config import PROJECT_ROOT
 
         config = (PROJECT_ROOT / "src" / "council" / "config.py").read_text(encoding="utf-8")
         protocol = (PROJECT_ROOT / "src" / "council" / "debate" / "protocol.py").read_text(
             encoding="utf-8"
         )
+        signal = (PROJECT_ROOT / "src" / "council" / "domain" / "signal.py").read_text(
+            encoding="utf-8"
+        )
         # The enum's per-member docstring is source-only, so it is read as source.
-        member = " ".join(protocol.split('SETTLED = "settled"')[1].split('"""')[1].split())
+        member = " ".join(signal.split('SETTLED = "settled"')[1].split('"""')[1].split())
 
-        for body in (" ".join(config.split()), " ".join(protocol.split())):
+        for body in (" ".join(config.split()), " ".join(protocol.split()), member):
             assert "cannot occur in any run this repository makes" not in body
-            assert "stillness_rounds = 2" in body
-        assert "Unreachable at the shipped cap, and arithmetically so" not in member
-        assert "stillness_rounds = 1" in member
+            assert "Unreachable at the shipped cap" not in body
+        assert "unreachable" in member.lower()
+        assert "cap was pinned at one" in member
 
 
 class PartialCaller:
@@ -299,7 +327,70 @@ class TestStillnessNeedsTheSameVoices:
             for index in (1, 2)
         )
 
-        assert _nobody_moved(*rounds) is False
+        assert _nobody_moved(*rounds, seats=len(seats)) is False
+
+    def test_a_committee_short_a_seat_cannot_settle_or_agree(self) -> None:
+        # The stronger requirement the longer cap forces. Both predicates read only
+        # the seats that spoke, so three survivors of a four-seat committee holding
+        # still for two rounds ended the debate as SETTLED -- entrenchment inferred
+        # from an absence, with the seat that was still arguing being the one that
+        # went missing. `_nobody_moved` already refused a round that *changed*
+        # speakers; a seat that drops out and stays out changes nothing after the
+        # round it left in, so it was invisible until conversations got long enough
+        # for one to happen mid-way.
+        seats = committee().seats
+
+        def round_of(present: int, index: int) -> tuple[Turn, ...]:
+            return tuple(
+                Turn(
+                    seat=seat,
+                    round_index=index,
+                    peers=(),
+                    reply=AgentReply(
+                        prompt=build_prompt(persona=seat.persona, price_context=PRICE_CONTEXT),
+                        signal=Signal(exposure=0.5, confidence=0.6, rationale="held"),
+                    ),
+                )
+                for seat in seats[:present]
+            )
+
+        three = (round_of(3, 1), round_of(3, 2))
+
+        assert _nobody_moved(*three, seats=len(seats)) is False
+        assert _agreed(three[1], spread=0.20, seats=len(seats)) is False
+        # And the whole committee still settles and still agrees, so the fix is not
+        # "refuse everything".
+        assert _nobody_moved(round_of(4, 1), round_of(4, 2), seats=len(seats)) is True
+        assert _agreed(round_of(4, 2), spread=0.20, seats=len(seats)) is True
+
+    async def test_a_seat_lost_mid_conversation_does_not_read_as_entrenchment(self) -> None:
+        # The same thing end to end, on the path a run takes. Seat 3 argues, drops
+        # out at round 2 and never comes back; the survivors hold still from there.
+        # The old predicates called that SETTLED at round 3.
+        script: list[Mapping[int, float]] = [
+            {0: 1.0, 1: -1.0, 2: 0.9, 3: -0.9},
+            {0: 1.0, 1: -1.0, 2: 0.9, 3: 0.9},
+            {0: 1.0, 1: -1.0, 2: 0.9},
+        ]
+
+        transcript = await run_debate(
+            composition=committee(),
+            arm=Arm.DEBATE,
+            dispersion=contested(),
+            price_context=PRICE_CONTEXT,
+            caller=PartialCaller(script),
+            seed=1,
+            agreement_spread=-1.0,
+            stillness_rounds=2,
+            max_rounds=5,
+            placebo_min_gap=0,
+        )
+
+        assert transcript.stop_reason is StopReason.CAP
+        assert transcript.rebuttal_rounds == 5
+        # And the reason can be read against how many were alive to produce it.
+        assert transcript.surviving_seats == 3
+        assert transcript.surviving_seats < committee().size
 
 
 def restless(rounds: int = 9) -> list[list[float]]:
@@ -486,36 +577,40 @@ class TestTheSweepStopsOnItsOwnSettings:
         assert passed["agreement_spread"] == agreement_spread
         assert passed["stillness_rounds"] == stillness_rounds
 
-    def test_the_cap_the_sweep_passes_is_the_pin(self, tmp_path: Path) -> None:
-        # The sweep resolves `rebuttal_rounds` from `settings.max_debate_rounds`,
-        # so the setting is no longer read by nothing -- and its shipped value is
-        # the pin.
+    def test_the_cap_the_sweep_passes_is_the_configured_one(self, tmp_path: Path) -> None:
+        # The sweep resolves `rebuttal_rounds` from `settings.max_debate_rounds`, so
+        # plan, run and score move together -- and the shipped value is now six
+        # rather than the pin of one.
         assert self._sweep(tmp_path, {})["max_rounds"] == DEFAULT_REBUTTAL_ROUNDS
+        assert DEFAULT_REBUTTAL_ROUNDS == get_settings().max_debate_rounds > 1
 
-    def test_a_cap_above_the_pin_is_refused_rather_than_corrupting_a_run(
-        self, tmp_path: Path
-    ) -> None:
-        # The protocol is variable-length; the consumers `_check_cap` names are not,
-        # and at a higher
-        # cap they do not raise -- the resume check can never be satisfied, and
-        # `scoring.arm_exposures` reads the treatment arm at a round index a
-        # conversation that agreed early never wrote, so the treatment silently
-        # reverts to the control on exactly the converged points.
+    def test_a_cap_above_one_is_run_rather_than_refused(self, tmp_path: Path) -> None:
+        # `run_debate_arms` used to refuse every cap but one, because eight consumers
+        # read the cap as the index of each conversation's last round and corrupted a
+        # run at anything longer. They read `stop_reason` and each conversation's own
+        # final round now, so a longer cap is a longer conversation rather than a
+        # broken artefact, and the refusal that stood in for the work is gone.
+        assert self._sweep(tmp_path, {"max_debate_rounds": 3})["max_rounds"] == 3
+
+    def test_a_cap_below_one_rebuttal_round_is_still_refused(self, tmp_path: Path) -> None:
+        # What is left of the refusal, and it is arithmetic rather than a checklist:
+        # at zero rebuttal rounds the treatment arms are the control.
         base = make_settings(tmp_path)
         prices = make_prices()
         run_independent(base, prices)
         store = open_store(base)
         decisions = stored_decisions(store)
 
-        with pytest.raises(ValueError, match="rebuttal round"):
+        with pytest.raises(ValueError, match="at least one round"):
             asyncio.run(
                 run_debate_arms(
-                    settings=base.model_copy(update={"max_debate_rounds": 3}),
+                    settings=base,
                     prices=prices,
                     decisions=decisions,
                     contested=select_contested(decisions, settings=base),
                     provider_factory=ConstantFactory({"alpha": 0.5, "beta": -0.5}),
                     store=store,
                     arms=(Arm.DEBATE,),
+                    rebuttal_rounds=0,
                 )
             )

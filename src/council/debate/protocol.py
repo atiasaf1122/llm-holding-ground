@@ -12,32 +12,36 @@ view is an input to any other final view. :func:`rebuttal_peers` is where that
 holds -- a whole round's peer blocks are a pure function of the previous round,
 built before any of them is sent.
 
-**Ended by a condition rather than by a count -- at a cap of one.** An opening view,
-then rebuttal rounds until one of three things happens: every seat is within
-``agreement_spread`` of every other, nobody moves for ``stillness_rounds``
-consecutive rounds, or the cap is reached. The cap is whatever the caller passes as
-``max_rounds``, and every shipped path passes
-:data:`DEFAULT_REBUTTAL_ROUNDS` -- ``settings.max_debate_rounds`` is what
-:func:`council.debate.sweep.run_debate_arms`, :func:`council.planning.plan_experiment`
-and :mod:`council.scoring` all resolve the cap from, so plan, run and score move
-together; this module's fallback is only for a caller that passes neither. The sweep
-refuses any value but :data:`DEFAULT_REBUTTAL_ROUNDS`. So at the shipped cap with the
-configured ``stillness_rounds = 2``, the reachable
-stop reasons are :attr:`StopReason.AGREED`, :attr:`StopReason.CAP` and
-:attr:`StopReason.NO_SPEAKERS`; :attr:`StopReason.SETTLED` needs a streak of two
-quiet rounds and therefore at least two rebuttal rounds, so it cannot occur. That
-holds at ``stillness_rounds = 2`` and not below it: the field permits 1, the sweep
-threads the run's own value through, and the test suite parametrises it, and at 1 a
-single quiet rebuttal round ends the conversation as SETTLED.
+**Ended by a condition rather than by a count.** An opening view, then rebuttal
+rounds until one of three things happens: every seat is within ``agreement_spread``
+of every other, nobody moves for ``stillness_rounds`` consecutive rounds, or the cap
+is reached. The cap is whatever the caller passes as ``max_rounds``;
+``settings.max_debate_rounds`` is what :func:`council.debate.sweep.run_debate_arms`,
+:func:`council.planning.plan_experiment` and :mod:`council.scoring` all resolve it
+from, so plan, run and score move together, and this module's fallback is only for a
+caller that passes neither. At the shipped cap of six all four stop reasons are
+reachable, :attr:`~council.domain.signal.StopReason.SETTLED` included -- a streak of
+``stillness_rounds = 2`` quiet rounds needs two rebuttal rounds and now has room for
+them. While the cap was pinned at one it could not occur, which is the whole reason
+the pin was worth removing: entrenchment is the outcome this study is about, and the
+protocol was configured so that it could never be recorded.
 
-Which condition ended a conversation is returned on the transcript. It is *not* a
-stored measurement: :meth:`council.debate.sweep._Sweep.hold` reads it only to
-separate a conversation held from one abandoned, :class:`DebateReport` has no
-per-reason counter, and no column in :data:`council.agents.store.STORED_COLUMNS`
-carries it. Storing and reporting it is open as task 19. Raising the cap needs every
-consumer that assumes a fixed round count taught variable length first;
-:func:`council.debate.sweep._check_cap` holds that list, refuses any other cap, and is
-pinned by test.
+Both stop conditions require every chair to be filled. A committee that loses a seat
+mid-conversation goes on debating with the survivors, and survivors agree sooner and
+sit still more readily than the committee would have; letting either predicate fire
+on them would publish three agents' agreement under four agents' label. See
+:func:`_agreed`, :func:`_nobody_moved` and
+:attr:`DebateTranscript.surviving_seats`, which is what a stop reason has to be read
+against.
+
+Which condition ended a conversation is returned on the transcript **and stored**:
+:meth:`council.debate.sweep._Sweep.hold` stamps it onto every row of the
+conversation through :meth:`council.debate.caller.DecisionCaller.stamped`, and
+``stop_reason`` is a column of :data:`council.agents.store.STORED_COLUMNS`. It has to
+be, because a variable-length conversation leaves no fixed set of rows: the reason is
+what tells a resumed run that a conversation which stopped at round two is finished
+rather than owing four more. See
+:meth:`council.agents.store.DecisionStore.completed_conversations`.
 
 **Contested points only.** On a day the agents already agree, a conversation
 cannot change the committee's decision -- what skipping those days saves has never
@@ -62,7 +66,6 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from enum import StrEnum
 from typing import Protocol
 
 from council.agents.prompt import PeerView, RenderedPrompt
@@ -71,17 +74,37 @@ from council.debate.compositions import Composition, Seat
 from council.debate.peers import NoPeersError, SeatView, peers_for, seated_views
 from council.debate.placebo import PlaceboPool, donor_views
 from council.domain.signal import Arm, FailureMode, Signal
+from council.domain.signal import StopReason as StopReason  # re-exported; see below
 from council.evaluation.dispersion import Dispersion, is_contested
 from council.evaluation.frames import PointKey
 from council.evaluation.threshold import TOLERANCE, within
 
-DEFAULT_REBUTTAL_ROUNDS = 1
-"""Rounds after the opening one."""
+DEFAULT_REBUTTAL_ROUNDS = 6
+"""The cap every shipped path runs at: rounds after the opening one.
+
+A mirror of ``Settings.max_debate_rounds``, which is what
+:func:`council.debate.sweep.run_debate_arms`, :func:`council.planning.plan_experiment`
+and :mod:`council.scoring` actually resolve the cap from -- the setting cannot
+import this constant without closing a cycle, so the two are kept equal by test
+(``tests/test_docs_contract.py``) instead.
+
+A cap rather than a length. Under a fixed round count this number was also how
+many rounds every conversation held, and half the pipeline read it that way; it is
+now an upper bound that most conversations do not reach, and nothing may read it as
+the index of a conversation's last round.
+"""
 
 OPENING_ROUND = 0
 """The round every arm asks without peers: the independent question, put to a
 committee. Matching :data:`council.evaluation.persuasion.OPENING_ROUND`, which is
 the same round read back off disk."""
+
+# `StopReason` is declared in `council.domain.signal`, beside `Arm` and
+# `FailureMode`, because it is a stored column of `Decision` and those are declared
+# where the stored row is. The predicates that decide it live here, so it is
+# re-exported explicitly rather than by accident: `from council.debate.protocol
+# import StopReason` is how the debate layer and its tests have always named it, and
+# moving the declaration should not have moved the name.
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,45 +187,6 @@ class Turn:
         )
 
 
-class StopReason(StrEnum):
-    """Why a conversation ended.
-
-    *Which* condition ended it says something the round count alone does not --
-    but it is returned on the transcript rather than stored, so at present only
-    :meth:`council.debate.sweep._Sweep.hold` reads it, and only to tell a
-    conversation held from one abandoned. See the module docstring and task 19.
-    """
-
-    AGREED = "agreed"
-    """The seats came within :attr:`Settings.agreement_spread` of each other."""
-
-    SETTLED = "settled"
-    """Nobody moved for :attr:`Settings.stillness_rounds` consecutive rounds.
-
-    Unreachable at the shipped cap **with the configured**
-    ``stillness_rounds = 2``, and arithmetically so: a streak of two quiet
-    rounds needs at least two rebuttal rounds, and every shipped path passes
-    :data:`DEFAULT_REBUTTAL_ROUNDS` = 1. At ``stillness_rounds = 1`` -- a value
-    :class:`~council.config.Settings` permits and the tests exercise -- one quiet
-    rebuttal round ends the conversation here. It is kept rather than deleted because it
-    would be the interesting one -- a committee that stops without agreeing has
-    not converged, it has entrenched -- and because raising the cap is a change to
-    the experiment rather than a tuning knob. Two rounds rather than one because
-    an agent that ignored an argument on first reading may take it on the second,
-    and calling it entrenched after a single quiet round would deny it that.
-    """
-
-    CAP = "cap"
-    """The round limit was reached while the committee was still moving.
-
-    Not a failure. A conversation still in motion at the cap has no equilibrium
-    within the budget, and that is a result about the committee.
-    """
-
-    NO_SPEAKERS = "no_speakers"
-    """A whole round failed to generate, leaving the next with nothing to answer."""
-
-
 @dataclass(frozen=True, slots=True)
 class DebateTranscript:
     """One conversation, start to finish.
@@ -231,6 +215,24 @@ class DebateTranscript:
     @property
     def final(self) -> tuple[Turn, ...]:
         return self.rounds[-1]
+
+    @property
+    def surviving_seats(self) -> int:
+        """How many seats were still generating when the conversation ended.
+
+        Carried beside :attr:`stop_reason` because neither reason can be read
+        without it. :attr:`StopReason.AGREED` and :attr:`StopReason.SETTLED` are
+        now only reachable with every chair filled -- see :func:`_agreed` and
+        :func:`_nobody_moved` -- so on those this equals
+        ``composition.size`` and says so. On :attr:`StopReason.CAP` it is the
+        number that decides whether "still moving at the budget" describes the
+        committee or two survivors of it, and on
+        :attr:`StopReason.NO_SPEAKERS` it is zero by definition.
+
+        Derived rather than stored on the record, so it cannot disagree with the
+        rounds it is counted from.
+        """
+        return len(live_views(self.final))
 
 
 def live_views(turns: Sequence[Turn]) -> tuple[SeatView, ...]:
@@ -338,12 +340,19 @@ async def run_debate(
         # Drawn once here purely to fail fast: an unusable pool would otherwise
         # cost a whole opening round before raising. The draw the debate uses is
         # made per round, inside the loop.
+        #
+        # At the *last* round the cap allows rather than at the first, because the
+        # draw no longer wraps: a candidate set smaller than the cap can serve
+        # round 1 and raise at round 3, and failing there would cost every round
+        # generated before it. Refusing the point up front is what makes the
+        # sweep's pre-flight -- `debate.sweep.has_donor`, which is asked the same
+        # question with the same cap -- a promise rather than a hope.
         donor_views(
             pool=placebo_pool,
             point=point,
             composition=composition,
             seed=seed,
-            round_index=1,
+            round_index=cap,
             min_gap=placebo_min_gap,
         )
 
@@ -426,14 +435,18 @@ async def run_debate(
             reason = StopReason.NO_SPEAKERS
             break
 
-        if _agreed(rounds[-1], spread=spread):
+        if _agreed(rounds[-1], spread=spread, seats=len(seats)):
             reason = StopReason.AGREED
             break
 
         # Stillness is counted on consecutive quiet rounds, and the streak resets
         # the moment anyone moves: a committee that goes quiet, is stirred by one
         # seat, then goes quiet again has not been still for two rounds.
-        still_streak = still_streak + 1 if _nobody_moved(rounds[-2], rounds[-1]) else 0
+        still_streak = (
+            still_streak + 1
+            if _nobody_moved(rounds[-2], rounds[-1], seats=len(seats))
+            else 0
+        )
         if still_streak >= stillness:
             reason = StopReason.SETTLED
             break
@@ -448,20 +461,30 @@ async def run_debate(
     )
 
 
-def _agreed(turns: Sequence[Turn], *, spread: float) -> bool:
-    """Whether every seat that spoke is within ``spread`` of every other.
+def _agreed(turns: Sequence[Turn], *, spread: float, seats: int) -> bool:
+    """Whether every seat of the committee spoke and all of them are within ``spread``.
 
-    A round in which fewer than two seats produced output cannot show agreement:
-    one surviving voice agrees with nobody, and treating it as consensus would end
-    conversations on a generation failure.
+    The whole committee, not merely the seats that survived. A conversation may
+    now run for several rounds, so a seat that drops out part way through is no
+    longer a curiosity of the last round: the survivors go on answering each other
+    and, being fewer, come inside the bar sooner than the committee would have.
+    Recording that as :attr:`StopReason.AGREED` publishes the agreement of two
+    agents under the label of four, and the seat that left is the one that was
+    still arguing.
+
+    Requiring every chair rather than a floor of two is why ``seats`` is passed in
+    rather than counted off ``turns``: every seat takes a turn in every round --
+    :func:`_take_round` calls each of them -- and a failed turn is still a turn, so
+    ``len(turns)`` is the committee's size whatever happened and could never have
+    detected this. What varies is how many of those turns produced a view.
     """
     exposures = [view.exposure for turn in turns if (view := turn.view) is not None]
-    if len(exposures) < 2:
+    if len(exposures) < seats or len(exposures) < 2:
         return False
     return within(max(exposures) - min(exposures), spread)
 
 
-def _nobody_moved(previous: Sequence[Turn], current: Sequence[Turn]) -> bool:
+def _nobody_moved(previous: Sequence[Turn], current: Sequence[Turn], *, seats: int) -> bool:
     """Whether no seat's position changed between two rounds.
 
     Any movement at all counts, not just movement past the shift threshold: the
@@ -478,13 +501,19 @@ def _nobody_moved(previous: Sequence[Turn], current: Sequence[Turn]) -> bool:
     speaker sets and asking only whether the survivors held still scores a round that
     lost two seats and gained two back -- with the returners' exposures flipped in
     sign -- as nobody moving, which advances the streak and ends the debate as
-    :attr:`StopReason.SETTLED`, the verdict the design reads as entrenchment. And one
-    surviving voice can no more show the committee settled than :func:`_agreed` lets
-    it show consensus, so a floor of two applies here too.
+    :attr:`StopReason.SETTLED`, the verdict the design reads as entrenchment.
+
+    Every chair has to be filled in both rounds, for :func:`_agreed`'s reason and
+    one of its own. ``_nobody_moved`` reads stillness off the seats present in
+    *both* rounds, so a seat that drops out stops being able to reset the streak:
+    a committee still arguing through the seat it lost reads as entrenched, which
+    is the finding this study exists to report and the last one that should be
+    inferred from an absence. Two rounds of three seats out of four holding still
+    is a fact about three seats.
     """
     before = {turn.seat: view.exposure for turn in previous if (view := turn.view) is not None}
     after = {turn.seat: view.exposure for turn in current if (view := turn.view) is not None}
-    if before.keys() != after.keys() or len(before) < 2:
+    if before.keys() != after.keys() or len(before) < seats or len(before) < 2:
         return False
     return all(abs(before[seat] - after[seat]) <= TOLERANCE for seat in before)
 

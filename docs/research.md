@@ -92,15 +92,22 @@ not being persuaded -- it is yielding to the *fact* of contradiction. The headli
 number would then have to be described completely differently.
 
 **Collapsing any arm into another destroys the inference**, which is why the arm is
-part of the stored schema and why the peer rendering is one code path. One difference
-survives it: the placebo needs a donor at least `placebo_min_gap_sessions` back, so
-the arms do not cover the same points -- the first 60 decision dates in either case:
+part of the stored schema and why the peer rendering is one code path. The placebo
+needs a donor at least `placebo_min_gap_sessions` back, and one distinct donor per
+round the cap allows, so there are contested points it cannot answer. Those points are
+withheld from **all three** arms rather than from the placebo alone: the three answer
+an identical set, and a debate-minus-placebo difference is a difference in treatment
+rather than partly a difference in which days each arm saw. What the filter costs the
+experiment is the start of the calendar -- the first 60 decision dates in either case:
 60 of 461 dates (120 of 922 points) at the configured range, and 60 of 70 dates
-(120 of 140 contested points) on the six-month slice.
-`council.app.tables.coverage_note` reports the gap; any debate-minus-placebo
-difference must be read against it. The draw also constrains only the date and not
-the ticker, so debate-minus-placebo differences instrument identity along with day
-relevance.
+(120 of 140 contested points) on the six-month slice. `debate.sweep.servable_points`
+applies the filter, `run_debate_arms` puts the count on its report and the command
+line prints it, and `council.app.tables.coverage_note` reports what each arm holds.
+The cost that remains is against the *control*, which keeps every point: the treatment
+arms are backtested over a later slice than the independent arm.
+
+The draw also constrains only the date and not the ticker, so debate-minus-placebo
+differences instrument identity along with day relevance.
 
 The probe already produced a hint that this matters: one model abandoned a correct
 answer *more* often against an irrelevant argument than a pertinent one. At that
@@ -165,19 +172,36 @@ confound outright, at no cost.
 prior about a named lab would let that prior do the persuading, and the influence
 matrix would then measure reputation rather than argument.
 
-**One round.** An opening view, everyone reads everyone, a final view. Enough to
-answer *were you moved*; more rounds answer *did you converge*, which is a different
-question. The protocol in `debate/protocol.py` can end a conversation on agreement or
-on stillness as well as on a cap, but every shipped path pins the cap at one rebuttal
-round (`config.max_debate_rounds = 1`, `protocol.DEFAULT_REBUTTAL_ROUNDS = 1`), so
-that is the protocol that runs. Raising it now raises rather than being ignored:
-`debate.sweep.run_debate_arms` refuses any other value and names every consumer that
-has to be taught variable length first -- the resume check, `scoring.arm_exposures`'
-fixed round index, `scoring._arm_reports`' calibration read at that same index,
-`evaluation.persuasion`'s round-1 limit, `app.transcripts.read_transcripts`' round-1
-limit, `app.curves.arms_in`, which qualifies a treatment arm on the literal round 1
-rather than on the run's cap, and `app.panels._rounds_in`, which offers rounds 0 and
-1 only.
+**Ended by a condition, capped at six.** An opening view, then rebuttal rounds until
+the committee agrees, stops moving, or runs out of budget -- whichever comes first.
+`config.max_debate_rounds = 6` and `protocol.DEFAULT_REBUTTAL_ROUNDS = 6` are the cap
+and not the length; which condition ended each conversation is stored on every one of
+its rows as `stop_reason`, and the round count is an outcome rather than a setting.
+
+The cap was pinned at one rebuttal round until this change, and the pin cost the
+study its own subject: `StopReason.SETTLED` -- a committee that stops moving *without*
+agreeing, which is what entrenchment looks like -- needs a streak of
+`stillness_rounds = 2` quiet rounds and so at least two rebuttal rounds, and could
+therefore never be recorded. The pin existed because eight consumers read the cap as
+the index of every conversation's last round and corrupted a run at anything longer
+rather than failing. Each now reads the conversation's own length: the resume check
+and the plan ask `stop_reason` instead of counting rows, `scoring.arm_exposures` and
+`scoring._arm_reports` take each conversation's last stored round,
+`evaluation.persuasion` and `app.transcripts.read_transcripts` set the later rounds
+aside instead of refusing them, and `debate.placebo.select_placebo_point` refuses a
+point whose donor set is shorter than the conversation rather than repeating a donor.
+`app.curves.arms_in` needed no change -- round 1 is the round every held conversation
+has. One is unfixed and recorded as such in `debate.sweep._check_cap`:
+`app.panels._rounds_in` still offers rounds 0 and 1, so the dashboard's calibration
+panel cannot be pointed at the middle rounds of a long conversation.
+
+**The declared contrast is still round 0 against round 1.** The primary statistic
+pairs the opening view with the agent's first answer to its peers, at a cap of six as
+at a cap of one. Pairing round 0 with each conversation's *last* round instead would
+put an agent that agreed immediately and an agent that argued for six rounds on the
+same axis, and the number of rounds an agent got is itself an outcome of how it
+argued. The later rounds are stored, and are what `stop_reason` and the round count
+are computed from; they are not folded into the shift rate.
 
 **Only where there is disagreement.** On a point where the agents already agree, a
 conversation cannot change the committee's decision. This was expected to be the

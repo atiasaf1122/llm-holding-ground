@@ -10,8 +10,11 @@ C1. The four arms (independent / debate / rationale-only / placebo) each bound a
     Rationale-only withholds the peer's *structured* exposure field only, so it bounds
     anchoring on a peer's stated position rather than isolating anchoring: a figure a
     peer wrote into its own prose reaches the reader unchanged (see D1). The placebo
-    additionally requires a donor `placebo_min_gap_sessions` back, so it covers fewer
-    decision points than the arms it is differenced against (see the coverage note).
+    additionally requires a donor `placebo_min_gap_sessions` back, and one distinct
+    donor per round the cap allows; the points it cannot serve are withheld from all
+    three treatment arms, so the three cover one identical set and the shortfall is
+    against the independent control rather than between the arms (see the coverage
+    note).
 C2. The stance axis (momentum vs reversion) is necessary because an aggression-only
     axis produces agreement on direction and therefore nothing to debate.
 C3. A balanced design of 8 committees separates model main effects from persona main

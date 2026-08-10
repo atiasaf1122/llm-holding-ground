@@ -64,3 +64,10 @@ strict = true
 # The tests are the deliverable of half this repo's work, so they are checked
 # too: a test whose fixture drifts out of shape passes by asserting nothing.
 files = ["src/council", "tests"]
+
+# yfinance ships no py.typed marker. The untyped surface is one call, confined to
+# council/data/fetch.py, which converts the result into this project's own schema
+# and validates it before anything else sees it.
+[[tool.mypy.overrides]]
+module = "yfinance.*"
+ignore_missing_imports = true

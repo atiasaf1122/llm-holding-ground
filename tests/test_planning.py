@@ -30,7 +30,8 @@ from council.planning import (
     DEBATE_STAGE,
     INDEPENDENT_STAGE,
     TREATMENT_ARMS,
-    conversation_keys,
+    conversation_key,
+    conversation_rows,
     plan_experiment,
 )
 from council.report import format_duration, render_plan
@@ -56,30 +57,73 @@ def contested_points(settings: Settings) -> tuple[PointKey, ...]:
 # -- the count matches the run ----------------------------------------------------
 
 
-def test_the_plan_counts_exactly_what_a_run_issues(
+def test_the_control_stage_counts_exactly_what_a_run_issues(
     settings: Settings, prices: pd.DataFrame
 ) -> None:
-    # Two arms rather than three: the placebo is the one arm that legitimately
-    # issues fewer calls than the plan allows for, because the earliest contested
-    # point has no earlier donor. That asymmetry has its own test.
     store = open_store(settings)
-    planned_control = plan_experiment(settings=settings, prices=prices, store=store)
+    planned = plan_experiment(settings=settings, prices=prices, store=store)
 
     control = run_independent(settings, prices)
-    assert control.total_calls == planned_control.stages[0].inferences
 
+    assert control.total_calls == planned.stages[0].inferences
+
+
+def test_the_debate_stages_bound_what_a_run_issues_without_over_promising(
+    settings: Settings, prices: pd.DataFrame
+) -> None:
+    # This asserted equality, and equality was right while every conversation ran to
+    # the cap. It cannot be right now: a conversation stops on agreement, on
+    # stillness or at the cap, and which of those fires is not knowable before the
+    # conversation happens. So a debate stage quotes the cap's worth of rows and a
+    # run spends that or less -- which is the direction a budget has to err in, per
+    # `ASSUMED_CONTESTED_SHARE`'s own argument about not tempting somebody into a
+    # night that turns out to be three.
+    #
+    # Compared against a provider that counts calls rather than against the formula
+    # the plan was built from, which is what made this test worth having.
+    store = open_store(settings)
+    run_independent(settings, prices)
     arms = (Arm.DEBATE, Arm.DEBATE_RATIONALE_ONLY)
-    planned_debate = plan_experiment(
-        settings=settings, prices=prices, store=store, contested=contested_points(settings)
+    planned = plan_experiment(
+        settings=settings,
+        prices=prices,
+        store=store,
+        contested=contested_points(settings),
+        decisions=stored_decisions(store),
     )
+
     debating, _ = run_debates(settings, prices, arms=arms)
 
-    expected = sum(
+    bound = sum(
         stage.remaining
-        for stage in planned_debate.stages
+        for stage in planned.stages
         if stage.stage == DEBATE_STAGE and stage.arm in {str(arm) for arm in arms}
     )
-    assert debating.total_calls == expected
+    assert 0 < debating.total_calls <= bound
+    # And the bound is the cap's arithmetic rather than an arbitrary cushion: every
+    # conversation of every committee, at every round the cap allows.
+    committees = balanced_design(models=settings.agent_models)
+    assert bound == len(arms) * len(_servable(settings, prices)) * sum(
+        conversation_rows(composition=table, rebuttal_rounds=settings.max_debate_rounds)
+        for table in committees
+    )
+
+
+def _servable(settings: Settings, prices: pd.DataFrame) -> tuple[PointKey, ...]:
+    """The contested points every arm is actually run on, as the sweep filters them."""
+    from council.debate.sweep import servable_points
+
+    store = open_store(settings)
+    decisions = stored_decisions(store)
+    points = tuple(point.point for point in select_contested(decisions, settings=settings))
+    keep = servable_points(
+        points,
+        decisions=decisions,
+        committees=balanced_design(models=settings.agent_models),
+        min_gap=settings.placebo_min_gap_sessions,
+        rounds=settings.max_debate_rounds,
+    )
+    return tuple(point for point in points if point in keep)
 
 
 def test_planning_issues_no_inference_at_all(settings: Settings, prices: pd.DataFrame) -> None:
@@ -95,17 +139,23 @@ def test_a_plan_over_a_finished_run_has_nothing_left_to_do(
 ) -> None:
     run_independent(settings, prices)
     run_debates(settings, prices, arms=(Arm.DEBATE,))
+    store = open_store(settings)
 
     plan = plan_experiment(
         settings=settings,
         prices=prices,
-        store=open_store(settings),
+        store=store,
         contested=contested_points(settings),
+        decisions=stored_decisions(store),
         compositions=balanced_design(models=settings.agent_models),
     )
     debate = next(stage for stage in plan.stages if stage.arm == str(Arm.DEBATE))
 
     assert plan.stages[0].remaining == 0
+    # Zero, not "close to zero". Every conversation stopped somewhere short of the
+    # cap, so the rows on disk are fewer than the stage's `inferences`; `completed`
+    # is counted at the same width for every conversation the store says finished,
+    # which is what stops a plan over a finished run reading as work outstanding.
     assert debate.remaining == 0
 
 
@@ -195,13 +245,16 @@ def test_a_plan_taken_over_a_half_generated_control_arm_is_not_called_measured(
     assert [stage.estimated for stage in plan.stages] == [False, True, True, True]
 
 
-def test_the_placebo_stage_counts_only_the_points_it_can_draw_a_donor_for(
+def test_every_stage_counts_the_points_a_placebo_donor_can_be_drawn_for(
     settings: Settings, prices: pd.DataFrame
 ) -> None:
-    # `run_debate_arms` skips a placebo point whose pool holds no usable earlier
-    # day. A plan that counted those points anyway would quote work no run will
-    # spend, and `remaining` could never reach zero however many times `debate`
-    # was run -- which is what this module's docstring says cannot happen.
+    # This used to assert `placebo.inferences < debate.inferences`, because the
+    # placebo alone skipped a point whose pool holds no usable earlier day. That
+    # inequality *was* the defect: the three arms covered different calendars, and
+    # the points the placebo lost are the earliest ones rather than a random sample,
+    # so part of any debate-minus-placebo difference was a difference in coverage.
+    # The sweep now withholds those points from all three, so the three stages agree
+    # -- and each is smaller than a stage counting every contested point would be.
     run_independent(settings, prices)
     run_debates(settings, prices, arms=(Arm.DEBATE_PLACEBO,))
     store = open_store(settings)
@@ -213,27 +266,37 @@ def test_the_placebo_stage_counts_only_the_points_it_can_draw_a_donor_for(
         contested=contested_points(settings),
         decisions=stored_decisions(store),
     )
+    unfiltered = plan_experiment(
+        settings=settings, prices=prices, store=store, contested=contested_points(settings)
+    )
     stages = {stage.arm: stage for stage in plan.stages if stage.stage == DEBATE_STAGE}
-    placebo = stages[str(Arm.DEBATE_PLACEBO)]
 
-    assert placebo.remaining == 0
-    assert placebo.inferences < stages[str(Arm.DEBATE)].inferences
+    assert stages[str(Arm.DEBATE_PLACEBO)].remaining == 0
+    assert len({stage.inferences for stage in stages.values()}) == 1
+    assert len(_servable(settings, prices)) < len(contested_points(settings)), (
+        "no point was withheld, so this test has stopped checking"
+    )
+    for arm in TREATMENT_ARMS:
+        planned = next(
+            stage for stage in unfiltered.stages if stage.arm == str(arm)
+        )
+        assert stages[str(arm)].inferences < planned.inferences
 
 
-def test_a_conversation_missing_one_row_is_planned_whole(
+def test_a_conversation_holding_one_retriable_failure_is_planned_whole(
     settings: Settings, prices: pd.DataFrame
 ) -> None:
-    # The sweep resumes conversation by conversation: `_Sweep.group` re-holds a
-    # whole conversation unless *every* one of its `conversation_keys` is stored.
-    # A plan that counted the missing rows alone under-reported the resume budget
-    # by the length of a conversation -- on exactly the runs where resuming is
-    # what a plan is for.
+    # The sweep resumes conversation by conversation: `_Sweep.group` re-holds a whole
+    # conversation unless the store says it reached a stopping condition, and one
+    # unreachable-daemon row unmakes that. A plan that counted the missing rows alone
+    # under-reported the resume budget by the length of a conversation -- on exactly
+    # the runs where resuming is what a plan is for.
     run_independent(settings, prices)
     run_debates(settings, prices, arms=(Arm.DEBATE,))
+    store = open_store(settings)
 
     # One stored round-1 row demoted to a retriable failure, which is what an hour
-    # with the daemon down leaves behind: `completed_keys` stops counting it and
-    # its conversation is no longer whole.
+    # with the daemon down leaves behind.
     frame = pd.read_parquet(settings.decisions_path)
     rebuttals = frame.index[
         (frame["arm"] == str(Arm.DEBATE)) & (frame["round_index"] == 1)
@@ -245,17 +308,22 @@ def test_a_conversation_missing_one_row_is_planned_whole(
     plan = plan_experiment(
         settings=settings,
         prices=prices,
-        store=open_store(settings),
+        store=store,
         contested=contested_points(settings),
+        decisions=stored_decisions(store),
     )
     debate = next(stage for stage in plan.stages if stage.arm == str(Arm.DEBATE))
-    seats = balanced_design(models=settings.agent_models)[0].size
+    composition = balanced_design(models=settings.agent_models)[0]
 
-    # One row short bills the whole conversation, and the sweep then spends
-    # exactly that -- which is what this module's docstring promises.
-    assert debate.remaining == seats * 2
+    # One row short bills the whole conversation at the cap's width -- the bound, not
+    # the number of rows it happens to have written -- and the sweep then spends that
+    # or less. Both halves matter: under-billing is what this test exists to catch,
+    # and quoting the bound is what a variable-length conversation allows.
+    assert debate.remaining == conversation_rows(
+        composition=composition, rebuttal_rounds=settings.max_debate_rounds
+    )
     factory, _ = run_debates(settings, prices, arms=(Arm.DEBATE,))
-    assert factory.total_calls == debate.remaining
+    assert 0 < factory.total_calls <= debate.remaining
 
 
 def test_every_debate_arm_costs_the_same_because_each_debates_the_same_points(
@@ -280,21 +348,32 @@ def test_every_debate_arm_costs_the_same_because_each_debates_the_same_points(
 # -- the keys a plan and a sweep both read ----------------------------------------
 
 
-def test_a_conversation_names_every_seat_in_every_round(settings: Settings) -> None:
+def test_a_conversation_is_identified_without_naming_a_round(settings: Settings) -> None:
+    # `conversation_keys` named every seat in every round `0..cap`, and both the plan
+    # and the sweep asked whether the store held all of them. That was the same
+    # question as "is it finished" only while every conversation ran to the cap: a
+    # debate that agrees at round two writes fewer rows and could never satisfy it,
+    # so the sweep re-holds a point it already owns and `remaining` never reaches
+    # zero. The identity dropped the round, and the question moved to `stop_reason`.
     composition = balanced_design(models=settings.agent_models)[0]
 
-    keys = conversation_keys(
+    key = conversation_key(
         composition=composition,
         arm=Arm.DEBATE,
         decision_date=settings.start,
         ticker="AAA",
-        rebuttal_rounds=1,
     )
 
-    assert len(keys) == composition.size * 2
-    assert len(set(keys)) == len(keys)
-    assert {key[5] for key in keys} == {0, 1}
-    assert {key[6] for key in keys} == {composition.identifier}
+    assert key == (settings.start, "AAA", str(Arm.DEBATE), composition.identifier)
+    # The same conversation under another arm is another conversation, and the store
+    # answers in the same shape.
+    assert key != conversation_key(
+        composition=composition,
+        arm=Arm.DEBATE_PLACEBO,
+        decision_date=settings.start,
+        ticker="AAA",
+    )
+    assert conversation_rows(composition=composition, rebuttal_rounds=6) == composition.size * 7
 
 
 # -- the table a developer reads --------------------------------------------------

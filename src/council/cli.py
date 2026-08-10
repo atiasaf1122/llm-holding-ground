@@ -267,6 +267,13 @@ def do_debate(args: argparse.Namespace, out: TextIO) -> int:
         )
     )
     print(
+        f"{report.offered_points - report.dropped_points} point(s) answered by every "
+        f"arm; {report.dropped_points} withheld from all three for want of a placebo "
+        f"donor at least {settings.placebo_min_gap_sessions} session(s) back, holding "
+        f"every seat, for each of {settings.max_debate_rounds} round(s)",
+        file=out,
+    )
+    print(
         f"conversations {report.conversations}: held {report.held}, "
         f"skipped {report.skipped}, abandoned {report.abandoned}",
         file=out,

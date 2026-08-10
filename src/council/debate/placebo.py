@@ -127,6 +127,10 @@ def select_placebo_point(
             safe answer: a later donor is the lookahead this module exists to
             prevent, and quietly falling back to the point's own views would turn
             the placebo into a second debate arm wearing the control's label.
+        ValueError: if ``round_index`` is past the last usable candidate. A point
+            whose candidate set is smaller than the conversation is long cannot be
+            served without showing one donor twice, so it is refused rather than
+            wrapped -- see the comment at the draw itself.
     """
     decision_date, ticker = point
     settings = get_settings()
@@ -185,17 +189,29 @@ def select_placebo_point(
             f"{token}|{key[0].isoformat()}|{key[1]}".encode(), digest_size=8
         ).digest(),
     )
-    # Wraps whenever the candidate set is smaller than the round count, which the
-    # configured gap makes routine rather than impossible at the earliest
-    # admissible dates: the filter is `key[0] <= cutoff` where `cutoff =
-    # earlier[-gap]`, so a point with exactly `gap` earlier sessions has a
-    # one-element candidate set and every round draws the same donor. It is the cap
-    # of one rebuttal round, and nothing else, that keeps a repeated donor out of a
-    # run today. Above it the placebo would see an identical peer block in
-    # consecutive rounds -- the exact failure the per-round redraw was added to
-    # prevent -- with nothing raising or logging. See
-    # :func:`council.debate.sweep._check_cap`.
-    chosen = ordered[(round_index - 1) % len(ordered)]
+    # Refused rather than wrapped. The candidate set is smaller than the round count
+    # routinely rather than exceptionally: the filter is `key[0] <= cutoff` where
+    # `cutoff = earlier[-gap]`, so a point with exactly `gap` earlier sessions has a
+    # one-element candidate set. Taking `(round_index - 1) % len(ordered)` there
+    # showed the placebo a peer block it had already answered, in consecutive
+    # rounds, silently -- the exact failure the per-round redraw was added to
+    # prevent, and one that would let the control settle for a reason the treatment
+    # never faces. While the cap was one rebuttal round the modulo never bit; at six
+    # it bites on every point near the start of the calendar.
+    #
+    # A point that cannot serve every round is therefore not a point this arm can
+    # debate at all, and it is refused here in the same words
+    # :func:`council.debate.sweep.has_donor` refuses it in advance -- so the sweep
+    # drops it before spending an opening round, and `run_debate` draws at the cap
+    # rather than at round 1 so that a point which slips through fails before any
+    # generation rather than three rounds in.
+    if round_index > len(ordered):
+        raise ValueError(
+            f"no placebo donor for {decision_date} {ticker} at round {round_index}: "
+            f"the pool holds {len(ordered)} usable earlier session(s), and repeating "
+            "one would show this arm a peer block it has already answered"
+        )
+    chosen = ordered[round_index - 1]
 
     # The filter above already guarantees this. It is checked anyway because the
     # cost of the guarantee ever failing is the entire placebo arm, silently, and

@@ -29,7 +29,7 @@ from typing import Any, Final
 
 import pandas as pd
 
-from council.domain.signal import Decision, FailureMode
+from council.domain.signal import COMPLETED_STOP_REASONS, Decision, FailureMode
 from council.evaluation.frames import NO_COMPOSITION
 
 STORED_COLUMNS: Final[tuple[str, ...]] = (
@@ -40,6 +40,7 @@ STORED_COLUMNS: Final[tuple[str, ...]] = (
     "arm",
     "round_index",
     "composition",
+    "stop_reason",
     "exposure",
     "confidence",
     "rationale",
@@ -72,6 +73,30 @@ KEY_COLUMNS: Final[tuple[str, ...]] = (
 regenerated point, not two observations, and the later one wins."""
 
 DecisionKey = tuple[date, str, str, str, str, int, str]
+
+ConversationKey = tuple[date, str, str, str]
+"""``(decision_date, ticker, arm, composition)`` -- one conversation.
+
+:data:`DecisionKey` without the seat and without the round, which is exactly the
+unit :meth:`council.debate.sweep._Sweep.group` resumes on. It cannot resume on
+:data:`DecisionKey` any more: the length of a conversation is now an outcome of the
+debate, so there is no set of keys a finished conversation is guaranteed to hold.
+"""
+
+STOP_REASON: Final = "stop_reason"
+"""The stored column carrying
+:attr:`~council.domain.signal.Decision.stop_reason`."""
+
+NO_STOP_REASON: Final = ""
+"""How a row belonging to no finished conversation is written.
+
+The empty string rather than null, for the reason
+:data:`~council.evaluation.frames.NO_COMPOSITION` is: a null groups to nothing and
+compares false against everything, so an arm's rows would drop out of any tally
+keyed on this column with no error and no gap anybody would notice. Every
+independent-arm row carries it, and so does every row of a conversation that raised
+part way through.
+"""
 
 RETRIED_FAILURES: Final[frozenset[FailureMode]] = frozenset(
     {FailureMode.UNAVAILABLE, FailureMode.TRUNCATED}
@@ -188,6 +213,7 @@ def to_storage_frame(decisions: Sequence[Decision]) -> pd.DataFrame:
             "arm": str(decision.arm),
             "round_index": decision.round_index,
             "composition": decision.composition or NO_COMPOSITION,
+            "stop_reason": str(decision.stop_reason or NO_STOP_REASON),
             "exposure": decision.exposure,
             "confidence": decision.confidence,
             "rationale": decision.rationale,
@@ -288,6 +314,62 @@ class DecisionStore:
             keys.update(_keys_of(answered))
         return frozenset(keys)
 
+    def completed_conversations(self) -> frozenset[ConversationKey]:
+        """Every conversation whose stored rows say it reached a stopping condition.
+
+        The debate's counterpart to :meth:`completed_keys`, and it exists because
+        that method cannot answer the question any more. A conversation now ends on
+        agreement, on stillness or at the cap, so the rows it leaves behind are
+        however many rounds it happened to need; a resume test that asks for a row
+        at every round up to the cap is never satisfied by a conversation that
+        agreed at round two, and the sweep re-debates a point it already owns while
+        :func:`council.planning.plan_experiment` reports work that can never be
+        finished.
+
+        So the marker is :attr:`~council.domain.signal.Decision.stop_reason`, which
+        is only written once a conversation is over. A conversation counts as
+        finished when some stored row of it carries one of
+        :data:`~council.domain.signal.COMPLETED_STOP_REASONS` and **no** stored row
+        of it records a failure in :data:`RETRIED_FAILURES`. The second half is what
+        :meth:`completed_keys` already promised at the row level: an hour with the
+        daemon down must not bake a flat exposure into the arm permanently, and one
+        unreachable seat leaves the whole conversation unfinished because the sweep
+        re-holds conversations rather than seats.
+
+        Rounds 0 and 1 of an ongoing conversation carry no reason, so a run
+        interrupted mid-conversation is resumed rather than read as complete. The
+        seats are not checked individually: a group's rows are written in one
+        atomic part file, so a conversation cannot be half stored.
+        """
+        finished: set[ConversationKey] = set()
+        unfinished: set[ConversationKey] = set()
+        reasons = {str(reason) for reason in COMPLETED_STOP_REASONS}
+        for path in self._sources():
+            frame = self._with_stop_reason(path)
+            if frame.empty:
+                continue
+            dates: list[date] = pd.to_datetime(frame["decision_date"]).dt.date.tolist()
+            for decision_date, ticker, arm, composition, failure, reason in zip(
+                dates,
+                frame["ticker"],
+                frame["arm"],
+                frame["composition"].fillna(NO_COMPOSITION),
+                frame["failure"],
+                frame[STOP_REASON].fillna(NO_STOP_REASON),
+                strict=True,
+            ):
+                key: ConversationKey = (
+                    decision_date,
+                    str(ticker),
+                    str(arm),
+                    str(composition),
+                )
+                if str(failure) in self._retry_failures:
+                    unfinished.add(key)
+                if str(reason) in reasons:
+                    finished.add(key)
+        return frozenset(finished - unfinished)
+
     def stored_prompts(self) -> dict[DecisionKey, str]:
         """Every stored decision's identity beside the digest of the text it answered.
 
@@ -366,6 +448,28 @@ class DecisionStore:
         return self._decisions_path
 
     # -- internals ------------------------------------------------------------
+
+    def _with_stop_reason(self, path: Path) -> pd.DataFrame:
+        """One source, guaranteed to carry :data:`STOP_REASON`.
+
+        Read whole rather than by column, which every other reader here does. A
+        parquet file is read by name, so asking for a column it does not hold raises
+        rather than returning nulls -- and ``stop_reason`` was added to
+        :data:`STORED_COLUMNS` after decisions had already been written. A store
+        pointed at a file from before it, which is what any half-finished run on disk
+        now is, would fail to open at all; the truthful answer is "no conversation in
+        this file recorded a stopping condition", and it is also the answer that
+        makes the sweep hold those conversations again.
+
+        Only that column is supplied. Any other absence is a frame this store did not
+        write, and inventing a value for it -- an empty ``failure``, say, which
+        compares unequal to :data:`~council.evaluation.frames.NO_FAILURE` and would
+        read every row as a crash -- is how a missing column becomes a wrong result.
+        """
+        frame = pd.read_parquet(path)
+        if STOP_REASON not in frame.columns:
+            frame[STOP_REASON] = NO_STOP_REASON
+        return frame
 
     def _sources(self) -> tuple[Path, ...]:
         """Everything holding decisions, consolidated frame first."""

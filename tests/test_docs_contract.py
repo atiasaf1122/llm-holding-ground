@@ -118,10 +118,23 @@ def test_the_declared_values_are_the_values_that_ship() -> None:
     assert f"placebo_min_gap_sessions = {settings.placebo_min_gap_sessions}" in declaration
 
 
-def test_the_shipped_cap_is_the_pin_the_documents_describe() -> None:
-    # Three documents described three protocols once. They now describe the one
-    # that runs, and this is what ties that description to the code.
-    assert get_settings().max_debate_rounds == DEFAULT_REBUTTAL_ROUNDS == 1
+def test_the_shipped_cap_is_the_one_the_documents_describe() -> None:
+    # Three documents described three protocols once. They now describe the one that
+    # runs, and this is what ties that description to the code. `config` cannot
+    # import the protocol's constant without closing a cycle, so equality is asserted
+    # here instead.
+    assert get_settings().max_debate_rounds == DEFAULT_REBUTTAL_ROUNDS == 6
+
+
+def test_the_readme_calls_the_cap_a_cap_rather_than_a_length() -> None:
+    # At a pin of one the two were the same number and the prose could be sloppy
+    # about which it meant. At six they are not: most conversations stop earlier, so
+    # a reader who takes the declared bound as the length of every debate will read
+    # the round counts, the inference budget and the coverage tables all wrong.
+    declaration = text(README).split("Six bounds are fixed in")[1].split("---")[0]
+
+    assert "cap, not a length" in declaration
+    assert "whichever of\nagreement, stillness or the cap comes first" in declaration
 
 
 # -- which bounds actually predate the results ------------------------------------

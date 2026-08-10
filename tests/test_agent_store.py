@@ -20,7 +20,7 @@ from council.agents.store import (
     part_filename,
     to_storage_frame,
 )
-from council.domain.signal import Arm, Decision, FailureMode
+from council.domain.signal import Arm, Decision, FailureMode, StopReason
 from council.evaluation.frames import NO_COMPOSITION, frame_to_rows
 
 GENERATED_AT = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -470,3 +470,146 @@ def test_the_archive_keeps_the_whole_prompt_and_the_raw_response(store: Decision
     assert archived["error"] is None
     # An archive line is not progress: only a stored decision marks a point done.
     assert store.completed_keys() == frozenset()
+
+
+# -- a conversation is finished when it says why it ended ----------------------
+
+
+def conversation(
+    *,
+    rounds: int,
+    stop_reason: StopReason | None,
+    failure: FailureMode = FailureMode.NONE,
+    failed_round: int = 0,
+) -> list[Decision]:
+    """One committee's stored conversation: two seats over ``rounds`` rounds."""
+    return [
+        make_decision(
+            arm=Arm.DEBATE,
+            composition="rotation-0",
+            model=model,
+            failure=failure if index == failed_round else FailureMode.NONE,
+        ).model_copy(update={"round_index": index, "stop_reason": stop_reason})
+        for index in range(rounds)
+        for model in ("alpha", "beta")
+    ]
+
+
+def keep(store: DecisionStore, decisions: list[Decision]) -> None:
+    store.checkpoint(
+        model="rotation-0", persona="debate", ticker="AAPL", decisions=decisions, completions=[]
+    )
+
+
+DEBATE_CONVERSATION = (date(2022, 3, 1), "AAPL", str(Arm.DEBATE), "rotation-0")
+
+
+def test_a_conversation_that_stopped_early_is_finished_rather_than_owing_rounds(
+    store: DecisionStore,
+) -> None:
+    # The resume test used to demand a stored row for every round `0..cap`. A
+    # conversation that agreed at round two never satisfies it, so the sweep
+    # re-debates a point it already owns on every resume and the plan that prices the
+    # run can never reach zero. Two rounds out of a cap of six, marked AGREED.
+    keep(store, conversation(rounds=2, stop_reason=StopReason.AGREED))
+
+    assert store.completed_conversations() == frozenset({DEBATE_CONVERSATION})
+
+
+def test_an_ongoing_conversation_is_not_finished_at_rounds_zero_and_one(
+    store: DecisionStore,
+) -> None:
+    # The other half, and the one that decides whether the marker is worth having:
+    # rounds 0 and 1 of a conversation still running look exactly like a conversation
+    # that agreed at round 1, except for the reason. Without the reason a resumed run
+    # would abandon it half finished.
+    keep(store, conversation(rounds=2, stop_reason=None))
+
+    assert store.completed_conversations() == frozenset()
+
+
+@pytest.mark.parametrize(
+    "reason", [StopReason.AGREED, StopReason.SETTLED, StopReason.CAP, StopReason.NO_SPEAKERS]
+)
+def test_every_stop_reason_ends_a_conversation_including_the_abandoned_one(
+    store: DecisionStore, reason: StopReason
+) -> None:
+    # NO_SPEAKERS is an abandoned conversation and a finished one at the same time: a
+    # round every seat botched reproduces exactly at temperature zero, so re-holding
+    # it would spend a night confirming it. The case a resume *is* for is the next
+    # test, where the failure is the backend rather than the model.
+    keep(store, conversation(rounds=2, stop_reason=reason))
+
+    assert store.completed_conversations() == frozenset({DEBATE_CONVERSATION})
+
+
+def test_one_unreachable_row_leaves_the_whole_conversation_unfinished(
+    store: DecisionStore,
+) -> None:
+    # `completed_keys` already promised this per row -- an hour with the daemon down
+    # must not bake a flat exposure into the arm permanently -- and the sweep re-holds
+    # conversations rather than seats, so one retriable row unmakes the conversation.
+    keep(
+        store,
+        conversation(
+            rounds=3, stop_reason=StopReason.CAP, failure=FailureMode.UNAVAILABLE, failed_round=1
+        ),
+    )
+
+    assert store.completed_conversations() == frozenset()
+
+
+def test_a_malformed_row_does_not_reopen_a_finished_conversation(
+    store: DecisionStore,
+) -> None:
+    # The other side of `RETRIED_FAILURES`: a completion the schema rejected is
+    # reproduced exactly by a second attempt, and re-holding the conversation would
+    # spend the whole night confirming it.
+    keep(
+        store,
+        conversation(
+            rounds=3, stop_reason=StopReason.CAP, failure=FailureMode.MALFORMED, failed_round=1
+        ),
+    )
+
+    assert store.completed_conversations() == frozenset({DEBATE_CONVERSATION})
+
+
+def test_the_independent_arm_holds_no_conversations(store: DecisionStore) -> None:
+    # It has no stop reason to carry, and the empty string must not be read as one.
+    store.checkpoint(
+        model="qwen3:8b",
+        persona="momentum-bold",
+        ticker="AAPL",
+        decisions=[make_decision()],
+        completions=[],
+    )
+
+    assert store.completed_conversations() == frozenset()
+
+
+def test_the_stop_reason_survives_the_round_trip_through_parquet(
+    store: DecisionStore,
+) -> None:
+    keep(store, conversation(rounds=2, stop_reason=StopReason.SETTLED))
+    store.consolidate()
+
+    frame = pd.read_parquet(store.decisions_path)
+
+    assert set(frame["stop_reason"]) == {str(StopReason.SETTLED)}
+
+
+def test_a_store_written_before_the_column_existed_still_opens(
+    store: DecisionStore,
+) -> None:
+    # `stop_reason` was added after decisions had already been written, and a parquet
+    # file is read by name. Refusing to open those artefacts is a worse answer than
+    # "no conversation in this file recorded a stopping condition" -- which is both
+    # true and what makes the sweep hold them again.
+    keep(store, conversation(rounds=2, stop_reason=StopReason.AGREED))
+    store.consolidate()
+    older = pd.read_parquet(store.decisions_path).drop(columns=["stop_reason"])
+    older.to_parquet(store.decisions_path, index=False)
+
+    assert store.completed_conversations() == frozenset()
+    assert store.completed_keys()

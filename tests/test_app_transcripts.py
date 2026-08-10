@@ -248,11 +248,19 @@ def test_the_label_says_which_point_and_which_arm_it_belongs_to() -> None:
     assert "dispersion 0.50" in label
 
 
-def test_a_round_past_the_protocols_two_is_refused() -> None:
+def test_a_round_past_the_paired_two_is_set_aside_rather_than_refused() -> None:
+    # This raised, which took the whole transcript panel down on any artefact
+    # holding a round 2 -- which is every artefact a six-round cap produces. The
+    # panel shows the two rounds the primary statistic is computed over; the cost is
+    # that a long conversation's "final" column is the agent's first answer to its
+    # peers rather than its last word, which `read_transcripts` now says out loud.
     frame = frame_of(*turns(opening=0.0, final=0.5), stored(round_index=2))
 
-    with pytest.raises(ValueError, match="past the protocol"):
-        read_transcripts(frame)
+    transcripts = read_transcripts(frame)
+
+    assert len(transcripts) == 1
+    assert [seat.shift.posterior_exposure for seat in transcripts[0].seats] == [0.5]
+    assert transcripts[0].silent == ()
 
 
 # -- the table under the transcript ------------------------------------------

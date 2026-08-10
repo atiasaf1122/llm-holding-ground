@@ -52,6 +52,17 @@ placebo test that passed anything less would be exercising a pool no sweep admit
 
 DEBATE_ARMS = (Arm.DEBATE, Arm.DEBATE_RATIONALE_ONLY, Arm.DEBATE_PLACEBO)
 
+ONE_REBUTTAL = 1
+"""The cap these tests run at unless they say otherwise.
+
+Not :data:`DEFAULT_REBUTTAL_ROUNDS`, which is the shipped cap of six. These are
+tests about *mechanics* -- who is shown to whom, which round a prompt belongs to,
+what a failed seat costs -- and the smallest conversation that has a rebuttal round
+at all is where those are cheapest to read and hardest to get accidentally right.
+The stopping rule itself is exercised at longer caps in ``test_debate_stopping.py``,
+and the two rounds this cap produces are also the two the analysis pairs.
+"""
+
 ORDER_TOKEN = "test-token"
 """Whatever varies the peer numbering. :func:`~council.debate.peers.peers_for`
 requires one, so a test that omitted it would be asserting on a permutation no
@@ -69,7 +80,7 @@ async def _run(
     composition: Composition | None = None,
     dispersion: Dispersion | None = None,
     pool: PlaceboPool | None = None,
-    rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
+    rebuttal_rounds: int = ONE_REBUTTAL,
 ) -> DebateTranscript:
     """One debate, with everything the test is not asserting on left at a default."""
     seated = committee() if composition is None else composition
@@ -408,24 +419,25 @@ def test_two_committees_on_one_day_do_not_share_a_donor_by_construction() -> Non
     assert draw_all("rotation-0") != draw_all("uniform-momentum-bold")
 
 
-def test_the_configured_gap_leaves_one_candidate_so_every_round_repeats_it() -> None:
-    # The comment on the modulo said wrapping needs "a conversation [to outlast] the
-    # pool, which the production gap and round cap make impossible". The gap makes
-    # it routine: the filter is `key[0] <= cutoff` with `cutoff = earlier[-gap]`, so
-    # a point with exactly `gap` earlier sessions has a one-element candidate set
-    # and every round draws the same donor. Only the cap of one hides it -- raising
-    # the cap would hand the placebo an identical peer block in consecutive rounds,
-    # which is the failure the per-round redraw was added to prevent.
+def test_a_point_the_pool_cannot_serve_every_round_is_refused_not_repeated() -> None:
+    # The draw took `(round_index - 1) % len(ordered)`, so a candidate set smaller
+    # than the conversation was long silently showed the placebo a peer block it had
+    # already answered -- and the configured gap makes that set small routinely: the
+    # filter is `key[0] <= cutoff` with `cutoff = earlier[-gap]`, so a point with
+    # exactly `gap` earlier sessions has exactly one candidate. Only the cap of one
+    # rebuttal round hid it. At the shipped cap of six it would be the ordinary case
+    # near the start of a calendar, and a repeated block lets the control settle for
+    # a reason the treatment never faces -- nothing new to answer -- which is the
+    # failure the per-round redraw was added to prevent.
     from council.config import get_settings
-    from council.debate.sweep import _check_cap
 
     gap = get_settings().placebo_min_gap_sessions
     composition = committee()
     days = tuple(date(2022, 1, 3) + timedelta(days=offset) for offset in range(gap + 1))
     pool = placebo_pool(composition, days=days)
 
-    drawn = {
-        select_placebo_point(
+    def draw(round_index: int) -> tuple[date, str]:
+        return select_placebo_point(
             min_gap=gap,
             required_seats=COMMITTEE_SIZE,
             pool=pool,
@@ -434,15 +446,36 @@ def test_the_configured_gap_leaves_one_candidate_so_every_round_repeats_it() -> 
             seed=SEED,
             round_index=round_index,
         )
-        for round_index in (1, 2, 3)
-    }
 
-    assert drawn == {(days[0], TICKER)}
-    # So raising the cap has to deal with it: the checklist names it, and so does
-    # the refusal a caller actually sees.
-    assert "select_placebo_point" in (_check_cap.__doc__ or "")
-    with pytest.raises(ValueError, match="select_placebo_point"):
-        _check_cap(DEFAULT_REBUTTAL_ROUNDS + 1)
+    # The one round the single candidate can serve is served.
+    assert draw(1) == (days[0], TICKER)
+    for round_index in (2, 3, DEFAULT_REBUTTAL_ROUNDS):
+        with pytest.raises(ValueError, match="already answered"):
+            draw(round_index)
+
+
+async def test_a_conversation_longer_than_the_pool_costs_nothing_before_it_is_refused() -> None:
+    # The refusal above is per round, so on its own it would land at round five of a
+    # six-round conversation with four rounds already generated. `run_debate` draws
+    # at the cap before the opening round for that reason, and the sweep's
+    # `has_donor` asks the same question one step earlier still, on the same cap.
+    from council.debate.sweep import has_donor
+
+    pool = placebo_pool(committee(), days=OTHER_DAYS)
+    caller = MockCaller()
+
+    assert has_donor(
+        pool, (DAY, TICKER), required_seats=COMMITTEE_SIZE, min_gap=0, rounds=len(OTHER_DAYS)
+    )
+    assert not has_donor(
+        pool, (DAY, TICKER), required_seats=COMMITTEE_SIZE, min_gap=0, rounds=len(OTHER_DAYS) + 1
+    )
+
+    with pytest.raises(ValueError, match="already answered"):
+        await _run(
+            Arm.DEBATE_PLACEBO, caller, pool=pool, rebuttal_rounds=len(OTHER_DAYS) + 1
+        )
+    assert caller.prompts == [], "the opening round was generated before the refusal"
 
 
 def test_a_pool_holding_only_this_day_is_refused() -> None:
@@ -637,7 +670,7 @@ async def test_the_last_round_the_cap_allows_is_read_for_speakers_too(arm: Arm) 
     caller = MockCaller(failing_models=frozenset(MODELS), failing_round=1)
 
     # Act
-    transcript = await _run(arm, caller, rebuttal_rounds=DEFAULT_REBUTTAL_ROUNDS)
+    transcript = await _run(arm, caller, rebuttal_rounds=ONE_REBUTTAL)
 
     # Assert
     assert transcript.stop_reason is StopReason.NO_SPEAKERS

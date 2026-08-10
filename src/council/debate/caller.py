@@ -27,7 +27,7 @@ from council.agents.runner import utc_now
 from council.agents.store import CompletionRecord
 from council.debate.compositions import Composition, Seat
 from council.debate.protocol import AgentReply
-from council.domain.signal import Arm, Decision, Signal
+from council.domain.signal import Arm, Decision, Signal, StopReason
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +96,35 @@ class DecisionCaller:
         )
         self.generated.append(SeatDecision(decision=decision, record=record))
         return _as_reply(decision, record)
+
+    def stamped(self, reason: StopReason | None) -> tuple[SeatDecision, ...]:
+        """Everything generated here, carrying how the conversation ended.
+
+        Stamped afterwards rather than at the call, and that is forced rather than
+        chosen: a turn is taken before anyone knows whether the round it belongs to
+        will turn out to be the last, so no argument to ``__call__`` could carry
+        this. It goes on every row of the conversation, opening round included,
+        because a stored row is the only unit this project persists -- a
+        conversation has no record of its own to hang it from.
+
+        ``None`` leaves the rows unstamped, which is the honest answer for a
+        conversation that raised part way through: it reached no stopping condition,
+        and :meth:`council.agents.store.DecisionStore.completed_conversations` has to
+        keep reading it as unfinished so the next run holds it again.
+
+        The archive line beside each decision is untouched: it records one request
+        and one response, and the conversation's outcome is not a property of
+        either.
+        """
+        if reason is None:
+            return tuple(self.generated)
+        return tuple(
+            SeatDecision(
+                decision=seat.decision.model_copy(update={"stop_reason": reason}),
+                record=seat.record,
+            )
+            for seat in self.generated
+        )
 
     def _provider_for(self, seat: Seat) -> Provider:
         if seat not in self._composition.seats:

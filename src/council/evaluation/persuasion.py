@@ -20,6 +20,7 @@ from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
+from typing import Final
 
 import pandas as pd
 
@@ -106,6 +107,14 @@ class Shift:
 def shifts(frame: pd.DataFrame, *, threshold: float | None = None) -> tuple[Shift, ...]:
     """Pair each agent's round 0 with its round 1, in date order.
 
+    Round 1 whatever the conversation went on to do. A debate now runs until it
+    agrees, settles or hits the cap, so a frame holds rounds 2 and above as well;
+    those are set aside here rather than refused, and the declared contrast stays
+    round 0 against round 1. :data:`PAIRED_ROUNDS` has the argument, which is that
+    the length of a conversation is itself an outcome -- pairing round 0 with each
+    conversation's *last* round would put an agent that agreed at once and an agent
+    that argued six rounds on the same axis.
+
     Rows without a partner are dropped, which is ordinarily correct: the independent
     arm has no round 1, and an uncontested day never got a debate. Use
     :func:`unpaired_rows` to see exactly what was dropped rather than trusting that.
@@ -122,10 +131,9 @@ def shifts(frame: pd.DataFrame, *, threshold: float | None = None) -> tuple[Shif
             before any debate ran.
 
     Raises:
-        ValueError: on a round index past 1, or on the same agent appearing twice in
-            one round of one conversation. Either means the frame is not what this
-            function assumes, and the pairing would silently take whichever row
-            happened to sort first.
+        ValueError: on the same agent appearing twice in one round of one
+            conversation. That means the frame is not what this function assumes, and
+            the pairing would silently take whichever row happened to sort first.
     """
     limit = get_settings().shift_threshold if threshold is None else threshold
     return tuple(
@@ -134,7 +142,13 @@ def shifts(frame: pd.DataFrame, *, threshold: float | None = None) -> tuple[Shif
 
 
 def unpaired_rows(frame: pd.DataFrame) -> tuple[DecisionRow, ...]:
-    """Rows :func:`shifts` dropped for want of a partner, in the canonical row order."""
+    """Rows :func:`shifts` dropped for want of a partner, in the canonical row order.
+
+    Rounds 0 and 1 only, per :data:`PAIRED_ROUNDS`. A round-4 row is not an unpaired
+    row: it had no partner because this comparison does not pair it, not because
+    something went missing, and counting it here would inflate the number a reader
+    checks the rate's denominator against by however long the conversations ran.
+    """
     return _rows_where(frame, lambda rounds: not _is_complete(rounds))
 
 
@@ -278,13 +292,27 @@ PairOrder = tuple[date, str, str, str, str, str]
 
 
 def _by_round(rows: Sequence[DecisionRow]) -> RoundsByAgent:
+    """One agent's rounds of one conversation, keyed by round index.
+
+    Every round the frame holds, not the first two. This used to raise on any index
+    above :data:`REBUTTAL_ROUND`, on the grounds that "the frame is not what this
+    function assumes" -- true while every conversation was exactly two rounds long,
+    and false the moment a conversation could run to six. The rounds above the first
+    rebuttal are ordinary stored rows now, and refusing them would take the primary
+    statistic down on every artefact this project is about to produce.
+
+    They are collected and then set aside: :func:`_paired` is what every question in
+    this module asks its rounds through, and it keeps rounds 0 and 1 alone. See its
+    docstring for why the comparison stays there.
+
+    Raises:
+        ValueError: if the same agent appears twice in one round of one
+            conversation. That still means the frame is not what this function
+            assumes -- the pairing would silently take whichever row happened to sort
+            first -- and it is not something a longer conversation can produce.
+    """
     by_round: RoundsByAgent = defaultdict(dict)
     for row in rows:
-        if row.round_index > REBUTTAL_ROUND:
-            raise ValueError(
-                f"round {row.round_index} is past the protocol's two rounds "
-                f"({row.model}/{row.persona} on {row.decision_date})"
-            )
         rounds = by_round[(row.debate, row.agent)]
         if row.round_index in rounds:
             raise ValueError(
@@ -293,6 +321,36 @@ def _by_round(rows: Sequence[DecisionRow]) -> RoundsByAgent:
             )
         rounds[row.round_index] = row
     return by_round
+
+
+PAIRED_ROUNDS: Final[tuple[int, ...]] = (OPENING_ROUND, REBUTTAL_ROUND)
+"""The two rounds every question in this module is answered over.
+
+Round 0 against round 1: the opening view against the same agent's first answer to
+its peers. That is the declared comparison and it stays the declared comparison at a
+cap of six, for the reason the module docstring gives -- it is the one contrast every
+arm can supply, since a conversation's *last* round is a different round in each one
+and the number of rounds an agent got is itself an outcome of how it argued. Reading
+the final round instead would compare an agent that agreed immediately against one
+that argued for six rounds and call the difference persuasion.
+
+The later rounds are not dropped from the run, only from this comparison, and they
+are not reported here as unpaired either: they had no partner because the design does
+not pair them, which is a different fact from a round whose partner is missing.
+"""
+
+
+def _paired(rounds: dict[int, DecisionRow]) -> dict[int, DecisionRow]:
+    """One agent's rounds, narrowed to the two this module compares.
+
+    Applied by every predicate below rather than at the point of pairing, and that
+    is load-bearing rather than tidy. :func:`_has_failure` over *all* the rounds
+    would drop the 0-1 pair of any conversation that later crashed at round four --
+    a pair both of whose rows are intact -- and :func:`failed_rows` would then report
+    two rows of a pair nothing was wrong with. The rate's denominator would shrink
+    for a reason that has nothing to do with the rounds it is computed from.
+    """
+    return {index: row for index, row in rounds.items() if index in PAIRED_ROUNDS}
 
 
 def _is_complete(rounds: dict[int, DecisionRow]) -> bool:
@@ -311,8 +369,8 @@ def _rows_where(
             (
                 row
                 for rounds in _by_round(frame_to_rows(frame)).values()
-                if predicate(rounds)
-                for row in rounds.values()
+                if predicate(paired := _paired(rounds))
+                for row in paired.values()
             ),
             key=lambda row: row.sort_key,
         )
@@ -325,7 +383,9 @@ def _pairs(rows: Sequence[DecisionRow]) -> tuple[tuple[DecisionRow, DecisionRow]
         # Sorted chronologically rather than on the grouping key, which leads with
         # composition and arm: this function promises date order, and a frame
         # spanning three debate arms is the normal case here rather than the edge.
-        for _, rounds in sorted(_by_round(rows).items(), key=_pair_order)
+        for _, rounds in (
+            (key, _paired(held)) for key, held in sorted(_by_round(rows).items(), key=_pair_order)
+        )
         if _is_complete(rounds) and not _has_failure(rounds)
     )
 

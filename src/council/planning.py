@@ -26,10 +26,9 @@ from typing import Final
 import pandas as pd
 
 from council.agents.runner import GenerationRunner
-from council.agents.store import DecisionKey, DecisionStore
+from council.agents.store import ConversationKey, DecisionStore
 from council.config import Settings
 from council.debate.compositions import Composition, balanced_design
-from council.debate.protocol import DEFAULT_REBUTTAL_ROUNDS
 from council.domain.persona import PERSONAS, Persona
 from council.domain.signal import Arm
 from council.evaluation.frames import PointKey
@@ -80,35 +79,41 @@ INDEPENDENT_STAGE: Final = "generate"
 DEBATE_STAGE: Final = "debate"
 
 
-def conversation_keys(
+def conversation_key(
     *,
     composition: Composition,
     arm: Arm,
     decision_date: date,
     ticker: str,
-    rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
-) -> tuple[DecisionKey, ...]:
-    """Every stored row one conversation produces, in seat then round order.
+) -> ConversationKey:
+    """The identity of one conversation, as a plan and a sweep both read it.
 
-    Built from the same fields :meth:`council.agents.inference.DecisionPoint.key`
-    assembles, so a plan counts exactly the rows a sweep would write and a sweep
-    can decide a conversation is already done by asking whether the store holds all
-    of them. Deriving both from one function is what stops a resumed run from
-    re-debating points it already owns.
+    This used to be ``conversation_keys``: every *row* a conversation produces,
+    seats crossed with rounds ``0..cap``. Both the sweep's resume check and this
+    module's ``completed`` count asked whether the store held all of them, and while
+    every conversation ran to the cap that was the same question as "is it
+    finished". It stopped being that question the moment a conversation could end on
+    agreement: a debate that agreed at round two holds five fewer rows than the cap
+    implies and can never satisfy the test, so the sweep re-holds a point it already
+    owns and ``remaining`` never reaches zero however many times ``debate`` is run.
+
+    So the identity dropped the round and the seat, and whether a conversation is
+    finished is asked of :attr:`~council.domain.signal.Decision.stop_reason` through
+    :meth:`council.agents.store.DecisionStore.completed_conversations`. Both callers
+    still derive the key from this one function, which is what stops a resumed run
+    from re-debating points it already owns.
     """
-    return tuple(
-        (
-            decision_date,
-            ticker,
-            seat.model,
-            seat.persona.name,
-            str(arm),
-            round_index,
-            composition.identifier,
-        )
-        for seat in composition.seats
-        for round_index in range(rebuttal_rounds + 1)
-    )
+    return (decision_date, ticker, str(arm), composition.identifier)
+
+
+def conversation_rows(*, composition: Composition, rebuttal_rounds: int) -> int:
+    """The most rows one conversation can produce: every seat in every round.
+
+    The **most**, not the number. A conversation that agrees early writes fewer, and
+    nothing can know in advance which will. A plan is a budget, so it quotes the
+    bound -- see :func:`_debate_stage`.
+    """
+    return composition.size * (rebuttal_rounds + 1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,14 +191,24 @@ def plan_experiment(
             independent arm has not been generated yet, so the debate stages fall
             back to :data:`ASSUMED_CONTESTED_SHARE` and are marked estimated. It is
             also *ignored* while that arm is unfinished -- see below.
-        decisions: the stored decisions, used only to tell which contested points
-            the placebo arm can actually draw a donor for. Omitted, the placebo
-            stage counts every contested point, which is what the sweep would
-            spend only if every point had a donor.
+        decisions: the stored decisions, used only to tell which contested points a
+            placebo donor can be drawn for -- which is now what **every** arm is run
+            on, since :func:`council.debate.sweep.run_debate_arms` filters the point
+            set once and hands the survivors to all three. Omitted, every stage
+            counts every contested point, which is what the sweep would spend only
+            if every point had a donor.
         rebuttal_rounds: defaults to ``settings.max_debate_rounds``, the same
             resolution :func:`council.debate.sweep.run_debate_arms` makes, so a plan
-            and the run it prices cannot disagree about the length of a
-            conversation.
+            and the run it prices cannot disagree about the cap a conversation may
+            run to.
+
+    Every debate stage is an **upper bound** rather than an exact count, and that is
+    a property of the experiment rather than a weakness of the arithmetic: a
+    conversation ends on agreement, on stillness or at the cap, and which of those
+    fires cannot be known without running it. So a stage quotes the cap's worth of
+    rows per conversation, and a run spends that or less. ``completed`` is counted at
+    the same width for every conversation the store says has finished, so a plan over
+    a finished run still reads zero remaining rather than stalling short of it.
     """
     if rebuttal_rounds is None:
         rebuttal_rounds = settings.max_debate_rounds
@@ -211,7 +226,20 @@ def plan_experiment(
     # marker `render_plan` already has.
     if run_plan.remaining > 0:
         contested = None
-    done = store.completed_keys()
+    elif contested is not None:
+        # The same filter the sweep applies, applied once and to every stage --
+        # because the sweep applies it once and to every arm. Counting the placebo
+        # alone at the servable points, which is what this did while the placebo was
+        # the only arm that skipped, now prices three stages the run will not spend
+        # and prints three different figures for three arms that answer one set.
+        contested = _points_the_sweep_will_hold(
+            contested,
+            committees=committees,
+            decisions=decisions,
+            min_gap=settings.placebo_min_gap_sessions,
+            rounds=rebuttal_rounds,
+        )
+    done = store.completed_conversations()
     points = len(run_plan.decision_dates) * len(settings.tickers)
     stages = [
         StagePlan(
@@ -230,8 +258,6 @@ def plan_experiment(
                 assumed=round(points * assumed_contested_share),
                 done=done,
                 rebuttal_rounds=rebuttal_rounds,
-                decisions=decisions,
-                min_gap=settings.placebo_min_gap_sessions,
             )
             for arm in TREATMENT_ARMS
         ),
@@ -253,26 +279,30 @@ def _debate_stage(
     committees: Sequence[Composition],
     contested: Sequence[PointKey] | None,
     assumed: int,
-    done: frozenset[DecisionKey],
+    done: frozenset[ConversationKey],
     rebuttal_rounds: int,
-    decisions: pd.DataFrame | None = None,
-    min_gap: int | None = None,
 ) -> StagePlan:
-    """One debate arm's stage, counted exactly where that is possible.
+    """One debate arm's stage: a bound on what it costs, and what is already paid.
 
     Parallelism is the number of distinct base models at the table rather than
     ``settings.concurrency``. A debate round puts one request per seat in flight
     and then waits for all of them before the next round can be rendered, so the
     ceiling is the committee, not the queue -- and every model has to be resident
     at once, which is the operational fact this figure is really reporting.
+
+    All three arms are counted over one point set, because the sweep runs them over
+    one point set: the caller has already filtered it.
     """
     parallelism = max(len({seat.model for seat in table.seats}) for table in committees)
-    per_conversation = sum(table.size for table in committees) * (rebuttal_rounds + 1)
+    per_point = sum(
+        conversation_rows(composition=table, rebuttal_rounds=rebuttal_rounds)
+        for table in committees
+    )
     if contested is None:
         return StagePlan(
             stage=DEBATE_STAGE,
             arm=str(arm),
-            inferences=assumed * per_conversation,
+            inferences=assumed * per_point,
             completed=0,
             parallelism=parallelism,
             estimated=True,
@@ -280,29 +310,28 @@ def _debate_stage(
 
     # Counted per conversation, not per row, because that is the unit the sweep
     # resumes on: `council.debate.sweep._Sweep.group` re-holds a whole conversation
-    # unless *every* one of its keys is stored. A conversation missing one row --
-    # one round-1 row recording a retriable failure, or one abandoned after its
-    # opening round -- costs seats x (rebuttal_rounds + 1) inferences on the next
-    # run. Billing the missing rows alone under-reports the resume budget by up to
-    # that factor, on exactly the runs where resuming is what the plan is for.
-    conversations = {
-        conversation_keys(
-            composition=table,
-            arm=arm,
-            decision_date=decision_date,
-            ticker=ticker,
-            rebuttal_rounds=rebuttal_rounds,
+    # unless the store says it reached a stopping condition. A conversation one
+    # retriable failure short of finished costs a whole conversation on the next
+    # run, so billing the missing rows alone under-reports the resume budget -- on
+    # exactly the runs where resuming is what the plan is for. And it is billed at
+    # the cap's width in both directions: a conversation that will stop early cannot
+    # be known in advance, so `inferences` is a bound, and `completed` has to use
+    # the same width or a finished run would never read as finished.
+    conversations = [
+        (
+            conversation_key(
+                composition=table, arm=arm, decision_date=decision_date, ticker=ticker
+            ),
+            conversation_rows(composition=table, rebuttal_rounds=rebuttal_rounds),
         )
         for table in committees
-        for decision_date, ticker in _points_the_sweep_will_hold(
-            contested, arm=arm, composition=table, decisions=decisions, min_gap=min_gap
-        )
-    }
+        for decision_date, ticker in contested
+    ]
     return StagePlan(
         stage=DEBATE_STAGE,
         arm=str(arm),
-        inferences=sum(len(keys) for keys in conversations),
-        completed=sum(len(keys) for keys in conversations if done.issuperset(keys)),
+        inferences=sum(rows for _, rows in conversations),
+        completed=sum(rows for key, rows in conversations if key in done),
         parallelism=parallelism,
         estimated=False,
     )
@@ -311,29 +340,38 @@ def _debate_stage(
 def _points_the_sweep_will_hold(
     contested: Sequence[PointKey],
     *,
-    arm: Arm,
-    composition: Composition,
+    committees: Sequence[Composition],
     decisions: pd.DataFrame | None,
-    min_gap: int | None,
+    min_gap: int,
+    rounds: int,
 ) -> tuple[PointKey, ...]:
-    """The contested points this arm will actually be run on.
+    """The contested points every arm will actually be run on.
 
-    Two of the three arms debate every one of them. The placebo does not:
-    :func:`council.debate.sweep.run_debate_arms` skips a point whose pool holds no
-    usable earlier day, so counting all of them quotes work no run will ever spend
-    and leaves ``remaining`` unable to reach zero however many times ``debate`` is
-    run -- which is exactly what this module's docstring promises cannot happen.
+    All three, not the placebo alone. :func:`council.debate.sweep.run_debate_arms`
+    withholds a point no committee can draw a placebo donor for from *every* arm, so
+    that the three cover one calendar and a difference between them is not partly a
+    difference in which days they answered. A plan that counted all of them for two
+    arms and the servable ones for the third would quote work no run will spend and
+    leave ``remaining`` unable to reach zero however many times ``debate`` is run --
+    which is exactly what this module's docstring promises cannot happen.
+
+    ``decisions`` omitted, nothing is filtered: the caller has not supplied what the
+    question needs, and inventing an answer is worse than an over-count that says so.
     """
-    if arm is not Arm.DEBATE_PLACEBO or decisions is None:
+    if decisions is None:
         return tuple(contested)
     # Imported here rather than at module scope: council.debate.sweep reads
-    # TREATMENT_ARMS and conversation_keys from this module, so a top-level import
-    # would close the cycle.
-    from council.debate.sweep import has_donor, placebo_pool_for
+    # TREATMENT_ARMS and conversation_key from this module, so a top-level import
+    # would close the cycle. Its function rather than a copy of its rule, because a
+    # plan and the sweep it prices disagreeing about which points are in the
+    # experiment is the defect this whole path exists to remove.
+    from council.debate.sweep import servable_points
 
-    pool = placebo_pool_for(decisions, composition=composition)
-    return tuple(
-        point
-        for point in contested
-        if has_donor(pool, point, required_seats=composition.size, min_gap=min_gap)
+    servable = servable_points(
+        contested,
+        decisions=decisions,
+        committees=committees,
+        min_gap=min_gap,
+        rounds=rounds,
     )
+    return tuple(point for point in contested if point in servable)

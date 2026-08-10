@@ -91,14 +91,41 @@ def test_the_same_agent_twice_in_one_round_is_refused() -> None:
         shifts(frame, threshold=THRESHOLD)
 
 
-def test_a_third_round_is_refused_rather_than_silently_ignored() -> None:
+def test_a_third_round_is_set_aside_rather_than_refused() -> None:
+    # This raised, on the grounds that a frame holding a round 2 "is not what this
+    # function assumes". It was not, while the cap pinned every conversation to two
+    # rounds; at a cap of six the extra rounds are ordinary stored rows, and refusing
+    # them would take the primary statistic down on every artefact this project is
+    # about to produce. The declared contrast stays round 0 against round 1 -- see
+    # `PAIRED_ROUNDS` -- so a longer conversation gives the same one shift a shorter
+    # one does, rather than a different quantity under the same name.
     frame = frame_of(
         *debate_pair(model="alpha", opening=0.6, closing=0.1),
         row(model="alpha", round_index=2, exposure=0.0),
     )
 
-    with pytest.raises(ValueError, match="past the protocol"):
-        shifts(frame, threshold=THRESHOLD)
+    records = shifts(frame, threshold=THRESHOLD)
+
+    assert [(record.prior_exposure, record.posterior_exposure) for record in records] == [
+        (0.6, 0.1)
+    ]
+    assert unpaired_rows(frame) == ()
+
+
+def test_a_failure_in_a_later_round_does_not_drop_an_intact_pair() -> None:
+    # The sharp edge of setting the later rounds aside. `_has_failure` ran over every
+    # round the agent held, so a crash at round 4 -- which round 1 knows nothing
+    # about -- would drop the 0-1 pair from the rate and report both of its intact
+    # rows as a failed pair. The denominator would shrink for a reason that has
+    # nothing to do with the rounds it is computed from, and only in the arms that
+    # have later rounds at all.
+    frame = frame_of(
+        *debate_pair(model="alpha", opening=0.6, closing=0.1),
+        row(model="alpha", round_index=4, exposure=0.0, failure=str(FailureMode.UNAVAILABLE)),
+    )
+
+    assert len(shifts(frame, threshold=THRESHOLD)) == 1
+    assert failed_rows(frame) == ()
 
 
 def test_shifts_come_back_in_a_stable_order() -> None:

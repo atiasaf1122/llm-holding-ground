@@ -261,25 +261,65 @@ def test_adding_an_arm_later_regenerates_only_that_arm(
     assert factory.total_calls == report.generated == len(added)
 
 
-# -- the placebo arm's one asymmetry ----------------------------------------------
+# -- the point set the three arms share -------------------------------------------
 
 
-def test_a_point_with_no_earlier_donor_is_dropped_before_it_costs_an_opening_round(
+def test_a_point_with_no_earlier_donor_is_withheld_from_every_arm_not_the_placebo(
     settings: Settings, prices: pd.DataFrame
 ) -> None:
-    # The earliest contested point has nothing before it to borrow an argument
-    # from. Skipping it is right; skipping it *after* generating its opening round
-    # would spend a call per seat on a conversation that cannot be held, so the
-    # count of calls is what this asserts on rather than the count of rows.
+    # This used to assert `placebo.abandoned > 0` and `real.abandoned == 0`, which
+    # is the asymmetry itself: the earliest contested points have nothing before them
+    # to borrow an argument from, so the placebo covered a later calendar than the two
+    # arms it is differenced against and part of "debate minus placebo" was a
+    # difference in which days each arm answered. The filter is applied to all three
+    # now, so no arm abandons anything for want of a donor and every arm holds
+    # conversations at the same points.
     run_independent(settings, prices)
 
     _, real = run_debates(settings, prices, arms=(Arm.DEBATE,))
     placebo_factory, placebo = run_debates(settings, prices, arms=(Arm.DEBATE_PLACEBO,))
 
-    assert real.abandoned == 0
-    assert placebo.abandoned > 0
-    assert placebo.held == placebo.conversations - placebo.abandoned
+    assert real.abandoned == placebo.abandoned == 0
+    assert real.conversations == placebo.conversations == placebo.held
     assert placebo_factory.total_calls == placebo.generated
+    # And the withholding is reported rather than silent: the sweep says how many
+    # points it refused and every arm was offered the same total.
+    assert placebo.dropped_points > 0, (
+        "no point was withheld, so this fixture no longer exercises the filter"
+    )
+    assert real.dropped_points == placebo.dropped_points
+    assert real.offered_points == placebo.offered_points > placebo.dropped_points
+
+
+def test_the_three_arms_hold_conversations_at_exactly_the_same_points(
+    finished: tuple[Settings, pd.DataFrame],
+) -> None:
+    # The property the filter exists for, read off the stored rows rather than off
+    # the report that claims it.
+    settings, _ = finished
+    rows = frame_to_rows(stored_decisions(open_store(settings)))
+    covered = {
+        arm: {row.point for row in rows if row.arm == str(arm)} for arm in TREATMENT_ARMS
+    }
+
+    assert len(set(map(frozenset, covered.values()))) == 1
+    assert covered[Arm.DEBATE_PLACEBO]
+
+
+def test_the_withheld_points_are_the_earliest_ones_rather_than_a_random_sample(
+    finished: tuple[Settings, pd.DataFrame],
+) -> None:
+    # Why the filter has to apply to all three rather than only to the placebo: what
+    # a donor gap removes is the start of the calendar, so an arm that lost those
+    # points would be backtested over a later and possibly calmer market.
+    settings, _ = finished
+    decisions = stored_decisions(open_store(settings))
+    contested = {point.point for point in select_contested(decisions, settings=settings)}
+    debated = {row.point for row in frame_to_rows(rows_in_arm(decisions, Arm.DEBATE))}
+    withheld = contested - debated
+
+    assert withheld
+    assert max(day for day, _ in withheld) < max(day for day, _ in debated)
 
 
 # -- a conversation that loses a whole round --------------------------------------

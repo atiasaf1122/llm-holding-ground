@@ -40,6 +40,7 @@ from council.scoring import (
     arm_exposures,
     committee_exposures,
     evaluate_experiment,
+    final_round_rows,
 )
 from helpers_decisions import frame_of
 from helpers_decisions import row as decision_row
@@ -788,11 +789,17 @@ def test_the_short_committee_count_reaches_the_artefact_and_the_report(
     run: tuple[Settings, pd.DataFrame, pd.DataFrame],
 ) -> None:
     # Arrange -- one seat's post-debate row removed from one point of the debate arm.
+    # The conversation's *last* round, which is what the arm is scored at: a
+    # conversation that ran to round three still has a complete final view after a
+    # round-one row goes missing, so removing one of those is no longer a short
+    # committee and would make this test assert nothing.
     settings, prices, decisions = run
-    debated = decisions.loc[
-        (decisions[ARM].astype(str) == str(Arm.DEBATE)) & (decisions["round_index"] == 1)
-    ]
+    debated = final_round_rows(decisions.loc[decisions[ARM].astype(str) == str(Arm.DEBATE)])
     assert not debated.empty
+    assert (debated["round_index"] > 1).any(), (
+        "every conversation stopped at round one, so this test is not exercising "
+        "a variable-length final round"
+    )
     results = evaluate_experiment(
         settings=settings, prices=prices, decisions=decisions.drop(index=debated.index[0])
     )
@@ -803,3 +810,226 @@ def test_the_short_committee_count_reaches_the_artefact_and_the_report(
     payload = results_as_json(results)
     assert payload["short_committee_points"] == dict(results.short_committee_points)
     assert "committee short of a seat" in render_results(results)
+
+
+# -- a conversation that stopped early is read at the round it stopped on -----------
+
+
+def _conversation_rows(*, last_round_by_point: dict[date, int]) -> tuple[Any, ...]:
+    """One two-seat committee debating two points to different lengths.
+
+    Both seats open at 0.0 in every arm and walk to +0.9 by their last round, so a
+    reader that looks at the wrong round finds either nothing or the opening view.
+    """
+    written = [
+        decision_row(
+            on=day,
+            ticker="AAA",
+            model=seat.model,
+            persona=seat.persona.name,
+            arm=str(Arm.INDEPENDENT),
+            composition="",
+            exposure=0.0,
+        )
+        for day in last_round_by_point
+        for seat in TWO_SEAT.seats
+    ]
+    written += [
+        decision_row(
+            on=day,
+            ticker="AAA",
+            composition=TWO_SEAT.identifier,
+            model=seat.model,
+            persona=seat.persona.name,
+            arm=str(Arm.DEBATE),
+            round_index=index,
+            exposure=0.9 if index == last else 0.0,
+            confidence=0.9,
+        )
+        for day, last in last_round_by_point.items()
+        for index in range(last + 1)
+        for seat in TWO_SEAT.seats
+    ]
+    return frame_to_rows(frame_of(*written))
+
+
+def test_a_conversation_that_agreed_early_is_not_scored_as_the_control() -> None:
+    # The dangerous one, and it failed silently. `arm_exposures` read the treatment
+    # at the single index `rebuttal_rounds`; a conversation that agreed at round two
+    # has no row there, `series.update` writes nothing, and the point keeps the
+    # committee's *independent* exposure -- so the treatment is scored as the control
+    # it is being compared against, on exactly the points where the committee
+    # converged. No warning, no exception, and `short_committee_points` reads zero.
+    rows = _conversation_rows(last_round_by_point={D1: 2, D2: 5})
+
+    control, _ = arm_exposures(rows, compositions=[TWO_SEAT], arm=Arm.INDEPENDENT, rule=mean)
+    treated, short = arm_exposures(rows, compositions=[TWO_SEAT], arm=Arm.DEBATE, rule=mean)
+
+    assert control == {(D1, "AAA"): 0.0, (D2, "AAA"): 0.0}
+    # Each point read at the round its own conversation stopped on -- 2 and 5 -- and
+    # neither reverted to the control.
+    assert treated == {(D1, "AAA"): 0.9, (D2, "AAA"): 0.9}
+    assert short == 0
+
+
+def test_two_committees_stopping_at_different_rounds_are_each_read_at_their_own() -> None:
+    # The maximum is taken per committee as well as per point: one committee's last
+    # round is not evidence about another's, and a maximum over both would read the
+    # shorter conversation at a round it never reached.
+    first, second = two_seat_pair()
+    written = [
+        decision_row(
+            on=D1,
+            ticker="AAA",
+            model=model,
+            persona=persona,
+            arm=str(Arm.INDEPENDENT),
+            composition="",
+            exposure=0.0,
+        )
+        for model, persona in (("m1", PERSONAS[0].name), ("m2", PERSONAS[1].name))
+    ]
+    for identifier, last, final_exposure in (("A", 1, 0.4), ("B", 4, -0.6)):
+        written += [
+            decision_row(
+                on=D1,
+                ticker="AAA",
+                model=model,
+                persona=persona,
+                arm=str(Arm.DEBATE),
+                round_index=index,
+                composition=identifier,
+                exposure=final_exposure if index == last else 0.0,
+            )
+            for index in range(last + 1)
+            for model, persona in (("m1", PERSONAS[0].name), ("m2", PERSONAS[1].name))
+        ]
+
+    treated, short = arm_exposures(
+        frame_to_rows(frame_of(*written)),
+        compositions=(first, second),
+        arm=Arm.DEBATE,
+        rule=mean,
+    )
+
+    # A stopped at round 1 on +0.4, B at round 4 on -0.6; the arm averages the two.
+    assert treated == {(D1, "AAA"): pytest.approx(-0.1)}
+    assert short == 0
+
+
+def test_the_post_debate_calibration_reads_each_conversation_at_its_own_last_round() -> None:
+    # The second fixed-index read, with the same silent consequence: `_arm_reports`
+    # calibrated at `ROUND_INDEX == rebuttal_rounds`, so a conversation that stopped
+    # early contributed nothing and an arm whose every conversation stopped early
+    # published an empty calibration report.
+    rows = _conversation_rows(last_round_by_point={D1: 2, D2: 5})
+    frame = frame_of(
+        *(
+            decision_row(
+                on=row.decision_date,
+                ticker=row.ticker,
+                model=row.model,
+                persona=row.persona,
+                arm=row.arm,
+                round_index=row.round_index,
+                composition=row.composition,
+                exposure=row.exposure,
+                confidence=row.confidence,
+            )
+            for row in rows
+        )
+    )
+    debate = frame.loc[frame[ARM].astype(str) == str(Arm.DEBATE)]
+
+    final = final_round_rows(debate)
+
+    assert sorted(final["round_index"].tolist()) == [2, 2, 5, 5]
+    assert set(final["exposure"]) == {0.9}
+
+
+def test_a_conversation_abandoned_before_any_rebuttal_is_not_read_as_debated() -> None:
+    # "The last round this conversation held" must mean the last round *after* the
+    # opening. A conversation that produced only round 0 produced no post-debate view
+    # at all -- round 0 is the independent question put to a committee and renders
+    # byte-identically to the control's prompt -- so reading it as the final view
+    # would score the point at the control's own number while `debated_points`
+    # reported it as covered and `short_committee_points` read zero.
+    first, second = two_seat_pair()
+    written = [
+        decision_row(
+            on=D1,
+            ticker="AAA",
+            model=model,
+            persona=persona,
+            arm=str(Arm.INDEPENDENT),
+            composition="",
+            exposure=0.0,
+        )
+        for model, persona in (("m1", PERSONAS[0].name), ("m2", PERSONAS[1].name))
+    ]
+    # A debated the point to round 2 and moved; B was abandoned after its opening.
+    written += [
+        decision_row(
+            on=D1,
+            ticker="AAA",
+            model=model,
+            persona=persona,
+            arm=str(Arm.DEBATE),
+            round_index=index,
+            composition="A",
+            exposure=0.8 if index == 2 else 0.0,
+        )
+        for index in (0, 1, 2)
+        for model, persona in (("m1", PERSONAS[0].name), ("m2", PERSONAS[1].name))
+    ]
+    written += [
+        decision_row(
+            on=D1,
+            ticker="AAA",
+            model=model,
+            persona=persona,
+            arm=str(Arm.DEBATE),
+            round_index=0,
+            composition="B",
+            exposure=0.0,
+        )
+        for model, persona in (("m1", PERSONAS[0].name), ("m2", PERSONAS[1].name))
+    ]
+
+    treated, short = arm_exposures(
+        frame_to_rows(frame_of(*written)),
+        compositions=(first, second),
+        arm=Arm.DEBATE,
+        rule=mean,
+    )
+
+    # A contributes +0.8, B falls back to its independent 0.0 -- and B's fallback is
+    # counted rather than passed off as a committee that debated and did not move.
+    assert treated == {(D1, "AAA"): pytest.approx(0.4)}
+    assert short == 1
+
+
+def test_the_post_debate_calibration_excludes_an_abandoned_conversations_opening() -> None:
+    # The same rule on the frame side. An opening round in a table labelled
+    # post-debate is an un-debated view, on exactly the conversations that failed.
+    frame = frame_of(
+        *(
+            decision_row(
+                on=D1,
+                ticker="AAA",
+                model="m1",
+                persona=PERSONAS[0].name,
+                arm=str(Arm.DEBATE),
+                round_index=index,
+                composition=identifier,
+                exposure=0.5,
+            )
+            for identifier, rounds in (("A", (0, 1, 2)), ("B", (0,)))
+            for index in rounds
+        )
+    )
+
+    final = final_round_rows(frame)
+
+    assert final["composition"].tolist() == ["A"]
+    assert final["round_index"].tolist() == [2]

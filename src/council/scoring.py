@@ -32,15 +32,17 @@ from council.backtest.metrics import PerformanceMetrics, evaluate
 from council.config import Settings
 from council.data.prices import opens_frame
 from council.debate.compositions import Composition, balanced_design
-from council.debate.protocol import DEFAULT_REBUTTAL_ROUNDS
 from council.domain.signal import Arm
 from council.evaluation.aggregation import RULES, AggregationRule
 from council.evaluation.calibration import CalibrationReport, calibrate
 from council.evaluation.dispersion import contested_points, contested_share
 from council.evaluation.frames import (
     ARM,
+    COMPOSITION,
+    DECISION_DATE,
     NO_COMPOSITION,
     ROUND_INDEX,
+    TICKER,
     AgentKey,
     DecisionRow,
     PointKey,
@@ -78,6 +80,35 @@ def rows_in_arm(decisions: pd.DataFrame, arm: Arm) -> pd.DataFrame:
     return decisions.loc[decisions[ARM].astype(str) == str(arm)]
 
 
+def final_round_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """Each conversation's last **post-debate** round, on a frame of stored decisions.
+
+    The frame counterpart of :func:`committee_exposures`' per-point maximum, for the
+    one consumer that works in frames rather than rows: the post-debate calibration
+    table. A conversation is ``(composition, arm, decision_date, ticker)``, matching
+    :data:`~council.evaluation.frames.DebateKey`, and the maximum is taken inside it
+    -- so two committees that stopped at different rounds are each read at the round
+    they stopped on.
+
+    The opening round is excluded before the maximum is taken, so a conversation
+    abandoned before any rebuttal contributes nothing rather than contributing its
+    opening view. Round 0 is the independent question put to a committee and renders
+    byte-identically to the control's prompt: admitting it would put un-debated views
+    into a table labelled post-debate, on exactly the conversations that failed.
+    Applied to the independent arm this therefore returns nothing, which is why
+    :func:`_arm_reports` calibrates the control from its own rows instead.
+    """
+    if frame.empty:
+        return frame
+    debated = frame.loc[frame[ROUND_INDEX].astype(int) > OPENING_ROUND]
+    if debated.empty:
+        return debated
+    keys = [COMPOSITION, ARM, DECISION_DATE, TICKER]
+    held = debated[ROUND_INDEX].astype(int)
+    final = held.groupby([debated[key] for key in keys]).transform("max")
+    return debated.loc[held == final]
+
+
 # -- step 5: committee exposures, and what they earned ----------------------------
 
 
@@ -86,11 +117,23 @@ def committee_exposures(
     *,
     composition: Composition,
     arm: Arm,
-    round_index: int,
+    round_index: int | None,
     rule: AggregationRule,
 ) -> tuple[dict[PointKey, float], frozenset[PointKey]]:
     """One committee's aggregate exposure at each point it has a full view of, and
     which points were dropped for want of a seat.
+
+    ``round_index`` of ``None`` means *the last round this conversation actually
+    held*, decided per point rather than once for the arm. That is the only reading
+    of "after the debate" a variable-length protocol admits: a conversation ends on
+    agreement, on stillness or at the cap, so one committee's final round is round 2
+    and another's is round 6. Asking for a fixed index instead -- which is what this
+    took before, always the cap -- finds no row on every conversation that stopped
+    early, and those points then fall back through :func:`arm_exposures` to the
+    committee's *independent* exposure: the treatment is scored as the control on
+    exactly the points where the committee converged, silently, with nothing in the
+    artefact saying so. An integer still means that literal round, which is what the
+    independent arm's :data:`OPENING_ROUND` is.
 
     The points rather than their count, because :func:`arm_exposures` has a second
     way of losing a point -- a committee absent from the arm entirely -- and the two
@@ -127,14 +170,21 @@ def committee_exposures(
     """
     seats = {(seat.model, seat.persona.name) for seat in composition.seats}
     wanted = NO_COMPOSITION if arm is Arm.INDEPENDENT else composition.identifier
+    mine = [
+        row
+        for row in rows
+        if row.arm == str(arm) and row.composition == wanted and row.agent in seats
+    ]
+    # One index per point when the caller asked for the last round, and the caller's
+    # index everywhere when it asked for a literal one. Taken over this committee's
+    # own rows, because two committees debating the same point can stop at different
+    # rounds and the maximum over both would read one of them at a round it never
+    # reached.
+    final = _final_round_by_point(mine) if round_index is None else {}
     grouped: dict[PointKey, dict[AgentKey, float]] = defaultdict(dict)
-    for row in rows:
-        if (
-            row.arm == str(arm)
-            and row.round_index == round_index
-            and row.composition == wanted
-            and row.agent in seats
-        ):
+    for row in mine:
+        wanted_round = final.get(row.point) if round_index is None else round_index
+        if row.round_index == wanted_round:
             grouped[row.point][row.agent] = row.exposure
     complete = {
         point: rule([held[seat] for seat in sorted(seats)])
@@ -153,13 +203,38 @@ def committee_exposures(
     return complete, dropped
 
 
+def _final_round_by_point(rows: Sequence[DecisionRow]) -> dict[PointKey, int]:
+    """The highest **post-opening** round index each point holds, over the rows given.
+
+    "The last round this conversation held", provided the caller has already
+    narrowed the rows to one committee in one arm -- which is what makes a point a
+    conversation. :func:`committee_exposures` is the only caller and does exactly
+    that.
+
+    A point holding the opening round alone gets no entry, so it falls back to the
+    committee's independent view and is counted by :func:`arm_exposures` as a point
+    this committee is absent from. That is the honest reading of a conversation
+    abandoned before any rebuttal: it produced no post-debate view. Taking round 0 as
+    its "last round" would score the point at a view identical to the control's while
+    reporting it as debated -- the treatment quietly pulled towards the null, with
+    the counter that exists to say so reading zero.
+    """
+    final: dict[PointKey, int] = {}
+    for row in rows:
+        if row.round_index <= OPENING_ROUND:
+            continue
+        held = final.get(row.point)
+        if held is None or row.round_index > held:
+            final[row.point] = row.round_index
+    return final
+
+
 def arm_exposures(
     rows: Sequence[DecisionRow],
     *,
     compositions: Sequence[Composition],
     arm: Arm,
     rule: AggregationRule,
-    rebuttal_rounds: int = DEFAULT_REBUTTAL_ROUNDS,
 ) -> tuple[dict[PointKey, float], int]:
     """One exposure per decision point for one arm, averaged over the committees,
     and the (committee, point) pairs this arm lost to a short committee.
@@ -201,7 +276,10 @@ def arm_exposures(
                 rows,
                 composition=composition,
                 arm=arm,
-                round_index=rebuttal_rounds,
+                # The conversation's own last round, not the cap. See
+                # `committee_exposures`: a fixed index scores every conversation
+                # that converged early as the control it is being compared against.
+                round_index=None,
                 rule=rule,
             )
             debated_by[composition.identifier] = debated
@@ -449,7 +527,6 @@ def evaluate_experiment(
     compositions: Sequence[Composition] | None = None,
     rule_name: str = PRIMARY_RULE,
     window_count: int = DEFAULT_WINDOW_COUNT,
-    rebuttal_rounds: int | None = None,
 ) -> ExperimentResults:
     """Score every arm and answer every question the run was built to ask.
 
@@ -462,10 +539,18 @@ def evaluate_experiment(
     its mind" in a table read as one.
 
     Only the treatment arms the frame holds a **post-debate** row for are scored.
+    A post-debate row is any row past the opening one, which is what it has to be
+    once a conversation's length is an outcome: it used to mean a row at
+    ``round_index == rebuttal_rounds``, and at a cap of six that would refuse to
+    score an arm whose every conversation agreed at round two -- an arm that ran
+    perfectly well. Round 1 is the round every held conversation has, so this and
+    :func:`council.app.curves.arms_in`, which qualifies on exactly that, still agree
+    about which treatment arms a run holds.
+
     Scoring an arm without one is not a null: :func:`arm_exposures` fills every
-    uncontested point from the committee's independent view and overwrites it at
-    ``round_index == rebuttal_rounds``, so an arm with nothing at that index comes
-    out an exact copy of the control -- published as a clean null for the
+    uncontested point from the committee's independent view and overwrites it at the
+    conversation's last round, so an arm holding opening rounds alone comes out an
+    exact copy of the control -- published as a clean null for the
     secondary declared comparison. Presence alone does not settle it, and testing
     presence left the more reachable route open: :meth:`council.debate.sweep._Sweep.hold`
     stores the rows of an abandoned conversation and the protocol stops after the
@@ -475,11 +560,6 @@ def evaluate_experiment(
     run holds. They do not agree about the control: ``arms_in`` simply omits an
     absent independent arm, and this function refuses the frame outright, because a
     control is what the secondary declared comparison is stated against.
-
-    Args:
-        rebuttal_rounds: defaults to ``settings.max_debate_rounds``, the same
-            resolution :func:`council.debate.sweep.run_debate_arms` makes, so
-            raising the cap changes plan, run and score together.
 
     Raises:
         ValueError: if the frame holds no independent-arm row. The control was
@@ -501,8 +581,6 @@ def evaluate_experiment(
     """
     if decisions.empty:
         raise ValueError("no decisions have been generated; run the independent arm first")
-    if rebuttal_rounds is None:
-        rebuttal_rounds = settings.max_debate_rounds
     committees = tuple(
         balanced_design(models=settings.agent_models) if compositions is None else compositions
     )
@@ -539,16 +617,10 @@ def evaluate_experiment(
             "is against the control, and an absent control backtests flat and "
             "publishes as a clean null. The run holds " + ", ".join(sorted(present))
         )
-    post_debate = {row.arm for row in rows if row.round_index == rebuttal_rounds}
+    post_debate = {row.arm for row in rows if row.round_index > OPENING_ROUND}
     treatments = tuple(arm for arm in TREATMENT_ARMS if str(arm) in post_debate)
     scored = {
-        arm: arm_exposures(
-            rows,
-            compositions=committees,
-            arm=arm,
-            rule=rule,
-            rebuttal_rounds=rebuttal_rounds,
-        )
+        arm: arm_exposures(rows, compositions=committees, arm=arm, rule=rule)
         for arm in (Arm.INDEPENDENT, *treatments)
     }
     exposures = {arm: series for arm, (series, _) in scored.items()}
@@ -574,7 +646,6 @@ def evaluate_experiment(
         control=control,
         settings=settings,
         window_count=window_count,
-        rebuttal_rounds=rebuttal_rounds,
         short_committees=short_committees,
     )
     return ExperimentResults(
@@ -626,7 +697,6 @@ def _arm_reports(
     control: pd.DataFrame,
     settings: Settings,
     window_count: int,
-    rebuttal_rounds: int,
     short_committees: Mapping[str, int],
 ) -> _Reports:
     """Build the per-arm tables in one pass, so they cannot fall out of step.
@@ -681,7 +751,12 @@ def _arm_reports(
         # than recomputed here: a second definition of "short of a seat" would put
         # two numbers under one name in one artefact.
         short_committee_points[name] = short_committees.get(name, 0)
-        calibration[name] = calibrate(frame.loc[frame[ROUND_INDEX] == rebuttal_rounds], returns)
+        # Each conversation's own last round, for `arm_exposures`' reason and with
+        # the same consequence when it is got wrong. `ROUND_INDEX == rebuttal_rounds`
+        # selected nothing on a conversation that agreed early, so the arm's
+        # post-debate calibration was computed over the converged conversations'
+        # absence -- and at a cap no conversation reaches, over nothing at all.
+        calibration[name] = calibrate(final_round_rows(frame), returns)
         # The same bar the shift table above was built with. Left to default, the
         # matrix would resolve its own from the process-wide settings, and one
         # results object would carry two definitions of a concession.

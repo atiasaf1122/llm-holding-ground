@@ -38,7 +38,12 @@ from council.evaluation.frames import (
     DecisionRow,
     frame_to_rows,
 )
-from council.evaluation.persuasion import OPENING_ROUND, REBUTTAL_ROUND, Shift
+from council.evaluation.persuasion import (
+    OPENING_ROUND,
+    PAIRED_ROUNDS,
+    REBUTTAL_ROUND,
+    Shift,
+)
 
 RoundsByAgent = dict[AgentKey, dict[int, DecisionRow]]
 
@@ -185,24 +190,36 @@ def read_transcripts(
     independent arm is the ordinary case of that -- it has no second round at all,
     so it drops out here without needing to be filtered by name.
 
+    Rounds above the first rebuttal are set aside rather than shown. A conversation
+    may run to six of them now, and the panel reads the same two rounds the primary
+    statistic is computed over -- see
+    :data:`council.evaluation.persuasion.PAIRED_ROUNDS`. What that costs is real and
+    is worth stating: a reader cannot follow a long conversation to its end here, and
+    the "final" column is the agent's first answer to its peers rather than its last
+    word.
+
     Args:
         threshold: what counts as having shifted, for the :class:`Shift` carried by
             each seat. Defaults to ``settings.shift_threshold``.
 
     Raises:
-        ValueError: on a round index past the protocol's two, or on a duplicated
-            decision key.
+        ValueError: on a duplicated decision key.
     """
     limit = get_settings().shift_threshold if threshold is None else threshold
     prose = rationale_lookup(frame)
 
     grouped: dict[TranscriptKey, RoundsByAgent] = defaultdict(lambda: defaultdict(dict))
     for row in frame_to_rows(frame):
-        if row.round_index > REBUTTAL_ROUND:
-            raise ValueError(
-                f"round {row.round_index} is past the protocol's two rounds "
-                f"({row.model}/{row.persona} on {row.decision_date})"
-            )
+        if row.round_index not in PAIRED_ROUNDS:
+            # Set aside rather than refused. This raised on any index above the
+            # first rebuttal, which was defensible while every conversation was
+            # exactly two rounds long and takes the whole panel down now that one
+            # can run to six -- on every artefact this project is about to produce.
+            # The panel shows the same two rounds the primary statistic is computed
+            # over, for `evaluation.persuasion.PAIRED_ROUNDS`' reason, so a reader
+            # who does not believe a shift rate can still come here and read one
+            # shift.
+            continue
         key = TranscriptKey(
             decision_date=row.decision_date,
             ticker=row.ticker,

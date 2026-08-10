@@ -67,11 +67,13 @@ class Settings(BaseSettings):
 
     # -- when a conversation ends ---------------------------------------------
     #
-    # The protocol can end a conversation on agreement, on stillness or at the
-    # cap, and *which* of those ended it would be a measurement. At the shipped
-    # cap of one rebuttal round it is not one: only AGREED and CAP are reachable,
-    # and the reason is returned on the transcript rather than stored. See the
-    # cap's own comment below, and task 19.
+    # The protocol ends a conversation on agreement, on stillness or at the cap,
+    # and *which* of those ended it is a measurement: it is stored on every row of
+    # the conversation as `stop_reason`, and it is also what a resumed run reads to
+    # tell a conversation that finished from one still owing rounds. At the shipped
+    # cap of six all three are reachable, SETTLED included -- while the cap was one
+    # it was not, which is why the pin was worth removing: entrenchment is the
+    # outcome this study is about.
     #
     # These three bounds were *not* declared before the run, and neither was
     # `placebo_min_gap_sessions` below. `shift_threshold` and
@@ -111,26 +113,28 @@ class Settings(BaseSettings):
     # take it on the second, and stopping at the first quiet round would record
     # that committee as entrenched without giving it the chance.
     #
-    # Read by no run at the shipped cap *with this default of two*. A streak of two
-    # quiet rounds needs at least two rebuttal rounds, and the cap below is one, so
-    # `debate.protocol.StopReason.SETTLED` cannot occur at the shipped cap with
-    # `stillness_rounds = 2`. It is reachable at 1 -- a value this field permits,
-    # the sweep threads through to `run_debate`, and the test suite parametrises --
-    # where one quiet rebuttal round ends the conversation as SETTLED. The bound is
-    # kept declared rather than deleted because raising the cap is a change to the
-    # experiment, not a tuning knob.
+    # Reachable at last. A streak of two quiet rounds needs at least two rebuttal
+    # rounds, and while the cap below was one `domain.signal.StopReason.SETTLED`
+    # could not occur at all with this default -- the study's own finding, a
+    # committee that stops without agreeing, was unrecordable by construction. At a
+    # cap of six it occurs.
     stillness_rounds: int = Field(default=2, ge=1, le=10)
 
-    # The cap, pinned to one rebuttal round -- the value of
-    # `debate.protocol.DEFAULT_REBUTTAL_ROUNDS`, which cannot be imported here
-    # without closing an import cycle. Pinned rather than chosen: at any higher
-    # value `evaluation.persuasion._by_round` raises on the middle rounds it
-    # cannot pair, `scoring.arm_exposures` reads the treatment arm at one fixed
-    # round index, and `debate.sweep._Sweep.group`'s resume check demands a row
-    # for every round up to the cap. `debate.sweep.run_debate_arms` refuses any
-    # other value rather than letting it corrupt a run silently, so raising this
-    # fails loudly and names what has to change first.
-    max_debate_rounds: int = Field(default=1, ge=1, le=20)
+    # The cap -- how many rebuttal rounds a conversation may run to, not how many it
+    # runs. Most stop earlier, on agreement or on stillness, and which one ended
+    # each is stored. It mirrors `debate.protocol.DEFAULT_REBUTTAL_ROUNDS`, which
+    # cannot be imported here without closing an import cycle; `test_docs_contract`
+    # keeps the two equal.
+    #
+    # Six rather than one. One was a pin, not a choice: eight consumers read the cap
+    # as the index of every conversation's last round, so a longer conversation
+    # corrupted a run rather than lengthening it, and `run_debate_arms` refused any
+    # other value rather than let that happen quietly. Those consumers read
+    # `stop_reason` and each conversation's own last round now. Six because a streak
+    # of `stillness_rounds` quiet rounds needs room to form after a committee has
+    # had a chance to move, and because the budget is real: every extra round costs
+    # one inference per seat per committee per arm on every contested point.
+    max_debate_rounds: int = Field(default=6, ge=1, le=20)
 
     # How far back the placebo donor must come from, in trading sessions. Added in
     # cbf6a55, after the results in fa436fa and 98a4020, and calibrated from that

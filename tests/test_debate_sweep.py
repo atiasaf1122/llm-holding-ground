@@ -29,7 +29,7 @@ from council.debate.protocol import DEFAULT_REBUTTAL_ROUNDS, OPENING_ROUND
 from council.debate.sweep import RATIONALE, _check_cap, has_donor, placebo_pool_for
 from council.domain.signal import Arm
 from council.evaluation.frames import NO_FAILURE, DecisionRow, PointKey
-from council.evaluation.persuasion import REBUTTAL_ROUND
+from council.evaluation.persuasion import REBUTTAL_ROUND, shifts, unpaired_rows
 from helpers_debate import TICKER, committee, placebo_pool
 
 CALENDAR: tuple[date, ...] = tuple(
@@ -50,32 +50,42 @@ def calendar_pool() -> PlaceboPool:
     return placebo_pool(committee(), days=CALENDAR)
 
 
-def is_servable(pool: PlaceboPool, point: PointKey, **gap: int) -> bool:
-    """Whether the real draw would produce a donor rather than raise."""
+def is_servable(pool: PlaceboPool, point: PointKey, *, rounds: int = 1, **gap: int) -> bool:
+    """Whether the real draw would serve every round rather than raise at one of them."""
     try:
-        select_placebo_point(
-            pool=pool,
-            point=point,
-            composition=COMPOSITION,
-            required_seats=SEATS,
-            seed=1,
-            **gap,
-        )
+        for round_index in range(1, rounds + 1):
+            select_placebo_point(
+                pool=pool,
+                point=point,
+                composition=COMPOSITION,
+                required_seats=SEATS,
+                seed=1,
+                round_index=round_index,
+                **gap,
+            )
     except ValueError:
         return False
     return True
 
 
 @pytest.mark.parametrize("gap", [0, 1, 3, 60])
-def test_the_preflight_admits_exactly_the_points_the_draw_can_serve(gap: int) -> None:
+@pytest.mark.parametrize("rounds", [1, 2, 6])
+def test_the_preflight_admits_exactly_the_points_the_draw_can_serve(
+    gap: int, rounds: int
+) -> None:
+    # Parametrised over the cap as well as the gap. The draw takes one donor per
+    # round and no longer wraps, so a point with four candidates serves a four-round
+    # conversation and raises at round five of a six-round one -- and a pre-flight
+    # that only asked about round 1 would admit it, let the sweep commit, and take
+    # the whole sweep down at round five with the group's uncheckpointed rows.
     pool = calendar_pool()
     points = sorted(pool)
 
     verdicts = [
         (
             point,
-            has_donor(pool, point, required_seats=SEATS, min_gap=gap),
-            is_servable(pool, point, min_gap=gap),
+            has_donor(pool, point, required_seats=SEATS, min_gap=gap, rounds=rounds),
+            is_servable(pool, point, min_gap=gap, rounds=rounds),
         )
         for point in points
     ]
@@ -83,6 +93,22 @@ def test_the_preflight_admits_exactly_the_points_the_draw_can_serve(gap: int) ->
     assert [point for point, admitted, _ in verdicts if admitted] == [
         point for point, _, servable in verdicts if servable
     ]
+
+
+def test_the_calendar_separates_the_round_counts_rather_than_answering_them_all_alike() -> None:
+    # Without this the property above passes on a pool deep enough that every cap
+    # admits everything, which is the shape a mirror bug hides in.
+    pool = calendar_pool()
+    admitted = {
+        rounds: sum(
+            1
+            for point in pool
+            if has_donor(pool, point, required_seats=SEATS, min_gap=1, rounds=rounds)
+        )
+        for rounds in (1, 2, 6)
+    }
+
+    assert admitted[1] > admitted[2] > admitted[6] > 0
 
 
 def test_the_calendar_separates_the_gaps_rather_than_answering_them_all_alike() -> None:
@@ -241,29 +267,56 @@ CAP_CONSUMERS: tuple[str, ...] = (
     "arms_in",
     "_rounds_in",
 )
-"""Every site that reads a fixed round index, as `_check_cap` has to name them.
+"""Every site that used to read a fixed round index, as `_check_cap` still has to
+name them.
 
-Naming three of the seven is not a cosmetic omission: `_check_cap`'s refusal is the
-instruction a next engineer follows, so a consumer it leaves out is one that stays
-coupled while the instruction reads as complete.
+The refusal is gone -- the cap is six and each of these reads a conversation's own
+length now -- but the docstring that lists them is the record of what had to change,
+and a next engineer raising the cap again is entitled to find the list rather than
+rediscover it. Naming three of the seven was the original defect: the instruction
+read as complete while four consumers stayed coupled.
 """
 
 
-def test_every_named_cap_consumer_really_assumes_one_rebuttal_round() -> None:
-    # Arrange -- the checklist is only worth pinning if each entry is coupled in
-    # the shipped code, so the couplings are asserted before the wording is.
-    above_cap = DEFAULT_REBUTTAL_ROUNDS + 1
+def test_the_cap_refusal_is_now_arithmetic_rather_than_a_checklist() -> None:
+    # `_check_cap` refused every cap but one. What is left is the one thing that is
+    # still true at any cap: a conversation needs a round after the opening.
+    _check_cap(1)
+    _check_cap(DEFAULT_REBUTTAL_ROUNDS)
+    _check_cap(DEFAULT_REBUTTAL_ROUNDS + 5)
 
-    # Act & Assert -- the transcript panel refuses the extra round outright.
-    with pytest.raises(ValueError, match="past the protocol's two rounds"):
-        read_transcripts(pd.DataFrame([_row_at(above_cap)]))
+    with pytest.raises(ValueError, match="at least one round"):
+        _check_cap(0)
 
-    # The dashboard offers no round above the first rebuttal.
-    assert _rounds_in(str(Arm.DEBATE)) == [OPENING_ROUND, REBUTTAL_ROUND]
 
-    # And `arms_in` qualifies a treatment arm on the literal round 1 rather than on
-    # the run's cap: an arm holding rounds 0-1 of a cap-2 run reads as present while
-    # `arm_exposures` would look at index 2 and find nothing.
+def test_the_checklist_of_what_had_to_change_is_still_written_down() -> None:
+    docstring = _check_cap.__doc__ or ""
+
+    assert [name for name in CAP_CONSUMERS if name not in docstring] == []
+    assert "select_placebo_point" in docstring
+
+
+def test_no_cap_consumer_still_refuses_the_rounds_a_run_now_produces() -> None:
+    # The couplings the old refusal named, asserted as *absent* -- the same three
+    # dashboard sites the previous version asserted as present, plus the two in the
+    # analysis. Each of these is a round index a six-round run puts on disk.
+    above_first_rebuttal = REBUTTAL_ROUND + 1
+
+    # The transcript panel sets the extra rounds aside instead of raising, so the
+    # panel renders rather than taking the dashboard down.
+    frame = pd.DataFrame([_row_at(OPENING_ROUND), _row_at(REBUTTAL_ROUND),
+                          _row_at(above_first_rebuttal)])
+    transcripts = read_transcripts(frame)
+    assert len(transcripts) == 1
+    assert len(transcripts[0].seats) == 1
+
+    # The primary statistic pairs rounds 0 and 1 and ignores the rest, rather than
+    # raising on them or letting a round-2 failure drop an intact 0-1 pair.
+    assert len(shifts(frame)) == 1
+    assert unpaired_rows(frame) == ()
+
+    # And `arms_in` needed no change: round 1 is the round every held conversation
+    # has, whatever the cap, which is also what `evaluate_experiment` qualifies on.
     rows = tuple(
         DecisionRow(
             decision_date=CALENDAR[0],
@@ -281,73 +334,19 @@ def test_every_named_cap_consumer_really_assumes_one_rebuttal_round() -> None:
             (str(Arm.INDEPENDENT), OPENING_ROUND),
             (str(Arm.DEBATE), OPENING_ROUND),
             (str(Arm.DEBATE), REBUTTAL_ROUND),
+            (str(Arm.DEBATE), above_first_rebuttal),
         )
     )
     assert arms_in(rows) == (Arm.INDEPENDENT, Arm.DEBATE)
 
 
-def test_the_cap_refusal_names_every_consumer_rather_than_the_first_three() -> None:
-    # Arrange
-    with pytest.raises(ValueError) as refused:
-        _check_cap(DEFAULT_REBUTTAL_ROUNDS + 1)
-
-    # Assert -- both the refusal a caller reads and the docstring a next engineer
-    # reads have to carry the whole list.
-    message = str(refused.value)
-    docstring = _check_cap.__doc__ or ""
-    assert [name for name in CAP_CONSUMERS if name not in message] == []
-    assert [name for name in CAP_CONSUMERS if name not in docstring] == []
-
-
-def test_no_other_site_in_the_debate_path_still_says_three_consumers() -> None:
-    # `_check_cap` was expanded to seven and pinned by test; the two places that tell
-    # a next engineer what raising the cap costs were not. The protocol module
-    # docstring is the first thing a reader of the protocol sees, so the instruction
-    # read as complete at three of seven -- the exact failure `_check_cap` says it
-    # exists to prevent.
-    protocol = (PROJECT_ROOT / "src" / "council" / "debate" / "protocol.py").read_text(
-        encoding="utf-8"
-    )
-    sweep = (PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "needs three\nconsumers" not in protocol
-    assert "three consumers" not in protocol
-    assert "_check_cap" in protocol
-    assert "three consumers are not" not in sweep
-    assert "seven consumers are not" in sweep
-
-
-def test_the_protocol_does_not_call_the_cap_setting_an_unread_fallback() -> None:
-    # `settings.max_debate_rounds` sets the sweep's cap, the plan's arithmetic and
-    # the round index the treatment arm is scored and calibrated at. The protocol
-    # docstring said it was read only by a fallback the sweep always overrides, and
-    # `run_debate_arms`' own Args block 400 lines away says the opposite.
-    protocol = (PROJECT_ROOT / "src" / "council" / "debate" / "protocol.py").read_text(
-        encoding="utf-8"
-    )
-    resolvers = (
-        (
-            PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py",
-            "run_debate_arms",
-            "council.debate.sweep",
-        ),
-        (PROJECT_ROOT / "src" / "council" / "planning.py", "plan_experiment", "council.planning"),
-        (PROJECT_ROOT / "src" / "council" / "scoring.py", "evaluate_experiment", "council.scoring"),
-    )
-
-    assert "is read only by\nthis module's fallback" not in protocol
-    assert "read only by" not in protocol
-    for path, function, module in resolvers:
-        body = path.read_text(encoding="utf-8").split(f"def {function}")[1]
-        assert "settings.max_debate_rounds" in body, function
-        assert module in protocol, module
-
-
-def test_the_shipped_cap_is_accepted() -> None:
-    # The other half, so the fix cannot be "refuse everything".
-    _check_cap(DEFAULT_REBUTTAL_ROUNDS)
+def test_the_dashboard_round_selector_still_offers_only_the_paired_rounds() -> None:
+    # Not fixed, and said out loud rather than left for a reader to discover: the
+    # calibration panel offers rounds 0 and 1, so the middle rounds of a six-round
+    # conversation cannot be asked about on the dashboard. That is a gap in an
+    # exploratory panel rather than a wrong number -- the two rounds it offers are
+    # the two the declared comparison is stated over -- but it is a gap.
+    assert _rounds_in(str(Arm.DEBATE)) == [OPENING_ROUND, REBUTTAL_ROUND]
 
 
 def test_the_debate_report_says_its_counters_are_pooled_over_the_arms() -> None:

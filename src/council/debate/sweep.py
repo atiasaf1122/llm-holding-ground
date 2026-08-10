@@ -30,14 +30,14 @@ from council.agents.runner import (
     build_contexts,
     check_prompt_provenance,
 )
-from council.agents.store import DecisionKey, DecisionStore
+from council.agents.store import ConversationKey, DecisionStore
 from council.config import Settings, get_settings
 from council.debate.caller import DecisionCaller, SeatDecision
 from council.debate.compositions import Composition, balanced_design
 from council.debate.peers import NoPeersError, SeatView
 from council.debate.placebo import PlaceboPool
-from council.debate.protocol import DEFAULT_REBUTTAL_ROUNDS, StopReason, run_debate
-from council.domain.signal import Arm
+from council.debate.protocol import run_debate
+from council.domain.signal import Arm, StopReason
 from council.evaluation.dispersion import Dispersion
 from council.evaluation.frames import (
     ARM,
@@ -50,7 +50,7 @@ from council.evaluation.frames import (
     TICKER,
     PointKey,
 )
-from council.planning import TREATMENT_ARMS, conversation_keys
+from council.planning import TREATMENT_ARMS, conversation_key
 
 _LOG = logging.getLogger(__name__)
 
@@ -109,16 +109,22 @@ def placebo_pool_for(decisions: pd.DataFrame, *, composition: Composition) -> Pl
 
 
 def has_donor(
-    pool: PlaceboPool, point: PointKey, *, required_seats: int, min_gap: int | None = None
+    pool: PlaceboPool,
+    point: PointKey,
+    *,
+    required_seats: int,
+    min_gap: int | None = None,
+    rounds: int = 1,
 ) -> bool:
-    """Whether the pool holds a usable earlier day for this point.
+    """Whether the pool holds enough usable earlier days for this point.
 
     Asked in advance so that a point with no donor is skipped before its opening
     round is generated rather than after: an opening round costs one call per seat
     and would be thrown away.
 
     It must apply **exactly** the test :func:`council.debate.placebo.select_placebo_point`
-    applies, minimum gap and seat completeness included. The two drifting apart is
+    applies over the whole conversation: minimum gap, seat completeness, and one
+    distinct candidate per round it may run to. The two drifting apart is
     not a cosmetic mismatch: this returns True, the sweep commits to the point, and
     the real draw then raises a plain ``ValueError`` that ``except NoPeersError``
     does not catch, so the whole sweep exits and the current group's uncheckpointed
@@ -147,6 +153,16 @@ def has_donor(
             current figure. That is a different quantity from the coverage figures
             above, which count the points the configured gap refuses outright, and
             the two do not share a denominator.
+        rounds: how many rebuttal rounds the conversation may run to, ordinarily
+            the sweep's cap. One donor is drawn per round and
+            :func:`~council.debate.placebo.select_placebo_point` no longer wraps, so
+            a point with four usable candidates cannot serve a six-round
+            conversation: it would either repeat a donor or, now, raise at round
+            five with four rounds already generated. Counting candidates here is
+            what turns that into a point skipped before it costs anything. The
+            default of one is the smallest conversation rather than a convenience --
+            it is what the draw's own default ``round_index`` asks for, so an
+            omitted keyword still mirrors the draw rather than out-admitting it.
     """
     if min_gap is None:
         min_gap = get_settings().placebo_min_gap_sessions
@@ -155,10 +171,12 @@ def has_donor(
     if len(earlier) < min_gap:
         return False
     cutoff = earlier[-min_gap] if min_gap > 0 else decision_date
-    return any(
-        key[0] < decision_date and key[0] <= cutoff and len(views) == required_seats
+    candidates = sum(
+        1
         for key, views in pool.items()
+        if key[0] < decision_date and key[0] <= cutoff and len(views) == required_seats
     )
+    return candidates >= rounds
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +205,20 @@ class DebateReport:
     generated: int = 0
     failures: int = 0
 
+    offered_points: int = 0
+    """Contested points handed to the sweep, before the placebo filter."""
+
+    dropped_points: int = 0
+    """Contested points withheld from **every** arm for want of a placebo donor.
+
+    Points, not conversations: the number is decided once for the whole sweep by
+    :func:`servable_points` and is the same for all three arms by construction,
+    which is the entire purpose of it. It is reported rather than logged because an
+    experiment that quietly answers fewer questions than it was asked is
+    indistinguishable, in every other output, from one that answered all of them.
+    ``offered_points - dropped_points`` is what each arm actually covers.
+    """
+
     def merge(self, other: DebateReport) -> DebateReport:
         return DebateReport(
             conversations=self.conversations + other.conversations,
@@ -195,6 +227,8 @@ class DebateReport:
             abandoned=self.abandoned + other.abandoned,
             generated=self.generated + other.generated,
             failures=self.failures + other.failures,
+            offered_points=self.offered_points + other.offered_points,
+            dropped_points=self.dropped_points + other.dropped_points,
         )
 
 
@@ -211,7 +245,16 @@ class _Sweep:
     store: DecisionStore
     providers: Mapping[str, Provider]
     contexts: ContextIndex
-    done: frozenset[DecisionKey]
+    done: frozenset[ConversationKey]
+    """Conversations the store says reached a stopping condition.
+
+    Whole conversations rather than :data:`~council.agents.store.DecisionKey` rows,
+    because a conversation's length is an outcome now: there is no set of rows a
+    finished one is guaranteed to hold, and asking for one row per round up to the
+    cap means a conversation that agreed at round two is re-held on every resume
+    while the plan that prices the run can never reach zero.
+    """
+
     rebuttal_rounds: int
     threshold: float | None
 
@@ -239,14 +282,14 @@ class _Sweep:
         rows: list[SeatDecision] = []
         for dispersion in points:
             report = report.merge(DebateReport(conversations=1))
-            if self.done.issuperset(
-                conversation_keys(
+            if (
+                conversation_key(
                     composition=composition,
                     arm=arm,
                     decision_date=dispersion.decision_date,
                     ticker=dispersion.ticker,
-                    rebuttal_rounds=self.rebuttal_rounds,
                 )
+                in self.done
             ):
                 report = report.merge(DebateReport(skipped=1))
                 continue
@@ -255,11 +298,19 @@ class _Sweep:
                 dispersion.point,
                 required_seats=composition.size,
                 min_gap=self.settings.placebo_min_gap_sessions,
+                rounds=self.rebuttal_rounds,
             ):
+                # Kept as a backstop rather than as the filter it used to be.
+                # `run_debate_arms` now drops a point no committee's pool can serve
+                # from *every* arm, so reaching this means one committee's pool is
+                # thinner than another's on a point the others kept -- which would
+                # cost the placebo arm a point the debate arm holds, the coverage
+                # difference the filter exists to remove. Loud, and counted.
                 _LOG.warning(
-                    "no placebo donor precedes %s for %s; skipped",
+                    "no placebo donor precedes %s for %s over %d round(s); skipped",
                     dispersion.point,
                     composition.identifier,
+                    self.rebuttal_rounds,
                 )
                 report = report.merge(DebateReport(abandoned=1))
                 continue
@@ -297,6 +348,22 @@ class _Sweep:
         stored, because a round 0 with no round 1 is what
         :func:`council.evaluation.persuasion.unpaired_rows` exists to report, and
         because the per-model failure rate is a published result.
+
+        Every row goes back carrying how the conversation ended, which is what a
+        resume reads. The three exits stamp three different things, and the
+        differences are the point:
+
+        * A conversation that reached a stopping condition is stamped with it, so a
+          resume knows a debate that agreed at round two owes nothing more.
+        * :attr:`~council.domain.signal.StopReason.NO_SPEAKERS` is stamped too, and
+          is *both* an abandoned conversation and a finished one. A round every seat
+          botched reproduces exactly at temperature zero, so re-holding it would
+          spend a night confirming it; a round lost to an unreachable daemon is
+          stored as a retriable failure and
+          :meth:`~council.agents.store.DecisionStore.completed_conversations`
+          refuses to call that finished, which is the case a resume is for.
+        * A conversation that raised out of the protocol is stamped with nothing.
+          It reached no stopping condition, and the next run holds it again.
         """
         caller = DecisionCaller(
             providers=self.providers,
@@ -330,7 +397,7 @@ class _Sweep:
             )
         except NoPeersError as exhausted:
             _LOG.warning("abandoned %s in %s: %s", dispersion.point, arm, exhausted)
-            return tuple(caller.generated), False
+            return caller.stamped(None), False
         # A whole round failing to generate stops the conversation from inside
         # rather than by raising, so the counting has to read the stop reason.
         # Without this, zero survivors is booked as a conversation held while one
@@ -339,69 +406,117 @@ class _Sweep:
             _LOG.warning(
                 "abandoned %s in %s: a whole round failed to generate", dispersion.point, arm
             )
-            return tuple(caller.generated), False
-        return tuple(caller.generated), True
+            return caller.stamped(transcript.stop_reason), False
+        _LOG.debug(
+            "%s in %s ended %s after %d rebuttal round(s) with %d of %d seat(s) alive",
+            dispersion.point,
+            arm,
+            transcript.stop_reason,
+            transcript.rebuttal_rounds,
+            transcript.surviving_seats,
+            composition.size,
+        )
+        return caller.stamped(transcript.stop_reason), True
 
 
 def _check_cap(rebuttal_rounds: int) -> None:
-    """Refuse a cap the rest of the pipeline cannot read.
+    """Refuse a cap no conversation could run to.
 
-    :mod:`council.debate.protocol` ends a conversation on a condition, so a
-    conversation may stop before the cap. Several consumers assume a fixed round
-    count instead, and only one of them raises when the assumption breaks. This list
-    is the checklist for raising the cap, so it names all of them rather than the
-    three that were noticed first:
+    What this used to refuse was *any* cap but one, because eight consumers read a
+    fixed round index and seven of them corrupted a run rather than failing at a
+    longer one. Each is wired for variable length now, and the list stays here as the
+    record of what that took:
 
-    * :meth:`_Sweep.group`'s resume check demands a stored row for every round
-      ``0..cap``, so a conversation that stopped early never satisfies it and is
-      re-generated on every resume -- and :func:`council.planning.plan_experiment`
-      counts ``completed`` the same way, so it can never reach ``total``.
-    * :func:`council.scoring.arm_exposures` reads the treatment arm at the single
-      index ``rebuttal_rounds``. A conversation that agreed earlier has no row
-      there, so the treatment silently reverts to the independent exposure on
-      exactly the converged points.
-    * :func:`council.evaluation.persuasion.shifts` raises on any round index above
-      1, which is the one that fails loudly.
-    * :func:`council.app.transcripts.read_transcripts` raises on any round index
-      above 1 too, so a cap-3 artefact takes the dashboard's transcript panel down
-      rather than rendering the extra rounds.
-    * :func:`council.app.curves.arms_in` qualifies a treatment arm on the literal
-      round 1 rather than on the run's cap. At a higher cap an arm holding only
-      rounds 0-1 passes as present while ``arm_exposures`` reads the cap's index and
-      finds nothing -- the flat curve that reads as a clean null, which is the exact
-      failure that function says it prevents.
-    * :func:`council.app.panels._rounds_in` offers rounds 0 and 1 only, so the rounds
-      above the first rebuttal cannot be asked about on the dashboard at all.
-    * :func:`council.scoring._arm_reports` calibrates the treatment arm at
-      ``ROUND_INDEX == rebuttal_rounds``, a second fixed-index read beside
-      ``arm_exposures`` and with the same consequence on a conversation that stopped
-      early: an empty calibration report rather than the arm's final round.
-    * :func:`council.debate.placebo.select_placebo_point` wraps its per-round donor
-      draw modulo the candidate set, and at the configured gap the earliest
-      admissible point has exactly one candidate. Above one round the placebo would
-      be shown an identical peer block in consecutive rounds -- the failure the
-      per-round redraw exists to prevent -- with nothing raising or logging.
+    * :meth:`_Sweep.group`'s resume check, and
+      :func:`council.planning.plan_experiment`'s ``completed`` count, ask
+      :attr:`~council.domain.signal.Decision.stop_reason` instead of demanding a row
+      for every round up to the cap.
+    * :func:`council.scoring.arm_exposures` and
+      :func:`council.scoring._arm_reports` read each conversation's own last round
+      rather than one fixed index that a conversation which agreed early never wrote.
+    * :func:`council.evaluation.persuasion._by_round` and
+      :func:`council.app.transcripts.read_transcripts` set the rounds above the first
+      rebuttal aside instead of raising on them, and go on pairing rounds 0 and 1.
+    * :func:`council.debate.placebo.select_placebo_point` refuses a point whose
+      candidate set is shorter than the conversation rather than wrapping and
+      repeating a donor.
+    * :func:`council.app.curves.arms_in` needed no change once ``arm_exposures``
+      stopped reading a fixed index: round 1 is the round every held conversation
+      has, whatever the cap.
+    * :func:`council.app.panels._rounds_in` is the one that was **not** changed. It
+      still offers rounds 0 and 1, so the middle rounds of a long conversation cannot
+      be asked about on the dashboard's calibration panel. That is a gap in an
+      exploratory surface rather than a wrong number -- those two rounds are the ones
+      the declared comparison is stated over -- and it is recorded here rather than
+      quietly left.
 
-    Pinning here rather than in the protocol keeps the variable-length machinery
-    intact and testable, and makes the pin a stated refusal rather than an
-    accidental default nobody overrode.
+    What is left is arithmetic. A cap below one is a conversation with no rebuttal
+    round at all -- the control with extra steps -- and
+    :func:`council.debate.protocol.run_debate` refuses it per conversation. Refusing
+    it here as well costs one comparison and saves the sweep from raising once per
+    point, after ``store.consolidate`` and the provider preflight have already run.
     """
-    if rebuttal_rounds != DEFAULT_REBUTTAL_ROUNDS:
+    if rebuttal_rounds < 1:
         raise ValueError(
-            f"the sweep runs at {DEFAULT_REBUTTAL_ROUNDS} rebuttal round(s), not "
-            f"{rebuttal_rounds}. Teach every consumer that assumes a fixed round "
-            "count variable length first: _Sweep.group's resume check demands a row "
-            "for every round up to the cap, scoring.arm_exposures reads the treatment "
-            "arm at one fixed round index, scoring._arm_reports calibrates at that "
-            "same fixed index, evaluation.persuasion._by_round rejects a round index "
-            "above 1, app.transcripts.read_transcripts rejects one too, "
-            "app.curves.arms_in qualifies a treatment arm on the literal round 1 "
-            "rather than on the run's cap, app.panels._rounds_in offers rounds 0 "
-            "and 1 only, and debate.placebo.select_placebo_point wraps its donor "
-            "draw modulo the candidate set -- which at the configured gap holds one "
-            "candidate on the earliest admissible point, so a second round would "
-            "repeat that donor silently"
+            f"a debate needs at least one round after the opening, not "
+            f"{rebuttal_rounds}; at zero the treatment arms are the control"
         )
+
+
+def servable_points(
+    points: Sequence[PointKey],
+    *,
+    decisions: pd.DataFrame,
+    committees: Sequence[Composition],
+    min_gap: int,
+    rounds: int,
+) -> frozenset[PointKey]:
+    """Which of these points every arm can be run on.
+
+    The placebo cannot run on a point with no usable earlier donor, and at the
+    configured gap that is every point in the first ``placebo_min_gap_sessions``
+    sessions of the calendar -- plus, now that a donor is drawn per round and never
+    repeated, every point whose candidate set is shorter than the cap. Those points
+    are at the *start* of the calendar, so dropping them from one arm and not the
+    others is not a coverage difference that averages out: the placebo would be
+    scored over a later, and possibly calmer, market than the arms it is
+    differenced against, and "debate minus placebo" would be part manipulation and
+    part calendar.
+
+    So the filter is applied to all three arms alike. What it withholds is counted
+    rather than logged away: :func:`run_debate_arms` puts the number on its report
+    and the command line prints it. An experiment that quietly shrinks is the
+    failure this function exists to prevent, and a silent version of it would look
+    exactly like a clean run.
+
+    A point is kept only if **every** committee can serve it. The pool is per
+    committee -- a donor day must hold a view from each of that committee's seats,
+    so a day one model failed on serves some committees and not others -- and
+    keeping a point that only six of eight committees can debate would put the
+    coverage difference back one level down, between committees within the placebo
+    arm rather than between the arms.
+
+    :func:`council.planning.plan_experiment` prices the run through this same
+    function, so the plan and the sweep cannot disagree about which points are in
+    the experiment.
+    """
+    pools = {
+        table.identifier: placebo_pool_for(decisions, composition=table) for table in committees
+    }
+    return frozenset(
+        point
+        for point in points
+        if all(
+            has_donor(
+                pools[table.identifier],
+                point,
+                required_seats=table.size,
+                min_gap=min_gap,
+                rounds=rounds,
+            )
+            for table in committees
+        )
+    )
 
 
 async def run_debate_arms(
@@ -423,15 +538,25 @@ async def run_debate_arms(
     is four seats answering the same round, and unloading between them would swap a
     checkpoint in and out per call.
 
+    **All three arms are run on one point set.** The contested points handed in are
+    filtered by :func:`servable_points` down to those a placebo donor can actually
+    serve, and the survivors go to every arm. Filtering the placebo alone -- which is
+    what skipping the point inside :meth:`_Sweep.group` amounted to -- left the three
+    arms covering different calendars, and the points the placebo lost are the
+    earliest ones rather than a random sample, so part of any debate-minus-placebo
+    difference was a difference in which days each arm answered. The count withheld
+    is on :attr:`DebateReport.dropped_points` and the command line prints it.
+
     Args:
         rebuttal_rounds: defaults to ``settings.max_debate_rounds``, so that raising
             the cap changes plan, run and score together rather than being read by
-            one of them and ignored by the others.
+            one of them and ignored by the others. It is a cap and not a length:
+            every conversation stops on whichever of agreement, stillness or the cap
+            comes first.
 
     Raises:
-        ValueError: for any cap other than :data:`DEFAULT_REBUTTAL_ROUNDS`. The
-            protocol is variable-length; seven consumers are not, and at a higher
-            cap they corrupt a run rather than failing. See :func:`_check_cap`.
+        ValueError: for a cap below one rebuttal round. See :func:`_check_cap`, which
+            is what is left of a refusal that used to cover every cap but one.
     """
     rebuttal_rounds = (
         settings.max_debate_rounds if rebuttal_rounds is None else rebuttal_rounds
@@ -444,6 +569,30 @@ async def run_debate_arms(
     committees = tuple(
         balanced_design(models=settings.agent_models) if compositions is None else compositions
     )
+    offered = tuple(contested)
+    servable = servable_points(
+        [point.point for point in offered],
+        decisions=decisions,
+        committees=committees,
+        min_gap=settings.placebo_min_gap_sessions,
+        rounds=rebuttal_rounds,
+    )
+    contested = tuple(point for point in offered if point.point in servable)
+    dropped = tuple(point for point in offered if point.point not in servable)
+    if dropped:
+        _LOG.warning(
+            "%d of %d contested point(s) withheld from every arm: no placebo donor "
+            "at least %d session(s) back holding every seat, for each of %d round(s) "
+            "-- earliest %s, latest %s. All three arms answer the remaining %d so "
+            "that no difference between them is a difference in coverage",
+            len(dropped),
+            len(offered),
+            settings.placebo_min_gap_sessions,
+            rebuttal_rounds,
+            min(point.point for point in dropped),
+            max(point.point for point in dropped),
+            len(contested),
+        )
     contexts = build_contexts(
         prices,
         tickers=settings.tickers,
@@ -463,7 +612,7 @@ async def run_debate_arms(
             for model in sorted({seat.model for table in committees for seat in table.seats})
         },
         contexts=contexts,
-        done=store.completed_keys(),
+        done=store.completed_conversations(),
         rebuttal_rounds=rebuttal_rounds,
         # From this sweep's settings rather than left as None, for the same
         # reason `placebo_min_gap` is threaded above: None reaches
@@ -477,7 +626,7 @@ async def run_debate_arms(
         threshold=settings.dispersion_threshold if threshold is None else threshold,
     )
 
-    report = DebateReport()
+    report = DebateReport(offered_points=len(offered), dropped_points=len(dropped))
     try:
         for provider in sweep.providers.values():
             await provider.preflight()
