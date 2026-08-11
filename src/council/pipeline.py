@@ -35,6 +35,7 @@ from council.domain.persona import PERSONAS, Persona
 from council.domain.signal import Arm
 from council.evaluation.dispersion import Dispersion, contested_points
 from council.evaluation.frames import decisions_to_frame
+from council.sampling import thin_contested
 from council.scoring import (
     DEFAULT_WINDOW_COUNT,
     PRIMARY_RULE,
@@ -165,10 +166,18 @@ def select_contested(decisions: pd.DataFrame, *, settings: Settings) -> tuple[Di
     The threshold comes from the caller's settings rather than from the process-wide
     ones. A run configured with an overridden ``dispersion_threshold`` would
     otherwise debate one set of points and report the contested share of another.
+
+    ``max_debate_points`` is applied here, and here alone, because this is the one
+    function both halves of the run read: :func:`council.planning.plan_experiment`
+    prices the debate from what this returns and :func:`run_experiment` runs it on
+    the same. Thinning anywhere downstream would let the plan quote a night's work
+    the sweep never spends. What it is and why it is not simply a shorter study
+    period is :mod:`council.sampling`.
     """
-    return contested_points(
+    contested = contested_points(
         rows_in_arm(decisions, Arm.INDEPENDENT), threshold=settings.dispersion_threshold
     )
+    return thin_contested(contested, keep=settings.max_debate_points)
 
 
 # -- steps 4 to 6: the debate arms, the exposures, and the results -----------------

@@ -133,11 +133,17 @@ arm removes one of them, and collapsing any arm into another destroys the infere
 | **Independent** | nothing | — the control everything is measured against |
 | **Debate** | peers' rationales **and** their exposure numbers | — the treatment |
 | **Rationale only** | peers' rationales, **with the peer's stated exposure removed** | **anchoring on a peer's stated position** — figures a peer wrote into its own prose are not removed |
-| **Placebo** | peers' rationales **from an unrelated day** (and possibly another instrument) | **compliance** — reacting to contradiction itself rather than to the argument |
+| **Placebo** | peers' rationales **from an unrelated day** — and, on the published run, **the other instrument 49% of the time** | **the argument's content** — movement equal to the debate arm's means the content contributed nothing |
 
-The placebo arm is the one that decides what the whole study means. If agents move as much
-when the counter-arguments are irrelevant as when they are pertinent, then nothing here is
-persuasion and the headline result would have to be described very differently.
+The placebo arm is the one that decides what the whole study means, and one word of the
+original design claim did not survive contact with the data: it was built to rule out
+*compliance* — reacting to contradiction itself — but a donor-day argument is not merely
+irrelevant, it is **incoherent** against the data the reader holds, and half the time it
+is about the other instrument entirely. So it bounds what the argument's *content*
+contributes and cannot separate "reacting to being contradicted" from "reacting to an
+argument that cannot be reconciled" (`CLAIMS.md` D8, D14). On the published run agents
+moved *more* under the placebo at the first rebuttal — and less by the conversation's
+end (C8, C28).
 
 Every decision here is made once a day, on every session that has a full `lookback_days`
 window behind it — the first `lookback_days - 1` sessions of the price table are warm-up
@@ -197,19 +203,23 @@ not folded into it.
 
 **Only where there is disagreement.** On a point where the agents already agree, a
 conversation cannot change the committee's decision and teaches nothing. This was expected to
-be most of the compute budget; the measured contested share was 100%, so it saved nothing.
+be most of the compute budget; the measured contested share was **984 of 1,002, 98.2%**,
+so it saved almost nothing.
 
-**That 100% is not the share for the committee that debates.**
+**That 98.2% is not the share for the committee that debates.**
 [`pipeline.select_contested`](src/council/pipeline.py) measures dispersion **once**, over
 the whole independent arm pooled across every model and every persona, and
 [`debate.sweep.run_debate_arms`](src/council/debate/sweep.py) applies that one list
 unchanged to all eight committees. The justification above is stated per committee; the
 figure is a pooled-grid figure, and the two are not the same number. Recomputed per
-committee on the superseded two-model run, the contested share is **449 of 1,120, 40%**
-— by committee: rotations 56, 125, 70 and 123 of 140, uniforms 3, 11, 30 and 31 of 140.
-At the unit the justification is stated in the gate is not vacuous, and the saving it was
-expected to produce was never measured. The mechanism is kept because it is correct, and
-what it costs or saves is an open question rather than a settled one.
+committee on the two-year run, the contested share is **4,728 of 8,016, 59.0%** — and the
+range is the point: 98.5% for `rotation-3` against **19.0%** for `uniform-reversion-bold`.
+A uniform committee spends four fifths of its budget arguing about points it never
+disagreed on, which is why it agrees within two rounds ([findings §3](docs/findings.md)).
+At the unit the justification is stated in, the gate is not vacuous — it is simply not
+applied there. The mechanism is kept because it is correct; where it is measured is the
+defect, and it is recorded rather than fixed, because fixing it would change which points
+every published arm was run on.
 
 ---
 
@@ -253,37 +263,53 @@ Named here rather than left for a reader to find.
 - **Half the headline question has no measurement in the market arms.** Nothing shipped
   crosses *was the agent right* with *did the agent hold*: calibration relates confidence
   to being right, persuasion relates confidence to shifting, and no artefact joins them.
-  The probe is the only instrument that pairs the two, and its confidences had no
-  variation, so "does being right make any difference" is posed here and answered nowhere.
+  The probe is the only instrument that pairs the two, and its confidences had almost
+  none — 95 of 96 stored confidences are exactly 1.0 — so "does being right make any
+  difference" is posed here and answered nowhere.
 - **Anonymisation reduces leakage; it does not prove its absence.** A description specific
   enough to be useful may be specific enough to recognise.
-- **A single deterministic sample per decision.** Intra-agent variance is unmeasured, so
-  some of what is attributed to disagreement between agents is noise within one.
+- **A single sample per decision, and it is not as deterministic as the settings say.**
+  Temperature 0 and a fixed seed notwithstanding, 4.3% of round-0 exposures differ
+  across arms on byte-identical prompts, 2.19% by at least the shift bar — a ~2pp
+  noise floor under every rate, symmetric across arms so it cannot create the gaps
+  between them (D12 in [`CLAIMS.md`](docs/CLAIMS.md)). Intra-agent variance is
+  otherwise unmeasured, so some of what is attributed to disagreement between agents
+  is noise within one.
 - **The three treatment arms answer a shorter calendar than the control.** The placebo needs
   a donor at least `placebo_min_gap_sessions` back — and, since a fresh donor is drawn for
   every round and never repeated, one such donor per round the cap allows. Points it cannot
   serve are withheld from **all three** arms rather than from the placebo alone, so the arms
   cover an identical point set and no debate-minus-placebo difference is partly a difference
-  in coverage. What that costs is the first 60 decision dates in either case: 60 of 461 dates
-  (120 of 922 points) at the configured range, and 60 of 70 dates (120 of 140 contested
-  points) on the six-month slice. `council debate` prints how many points were withheld and
+  in coverage. What that cost on the published run: 10 of the 60 sampled points, all in the
+  first sixty sessions of the calendar. `council debate` prints how many points were withheld and
   `council.app.tables.coverage_note` reports what each arm holds. The treatment arms are
   therefore backtested over a later slice of the calendar than the independent control, which
   keeps every point. The donor draw also constrains only the date, not the ticker, so a
   debate-minus-placebo difference differences instrument identity along with day relevance.
-- **Every run reported here used synthetic prices.** `council.data.prices.synthetic_prices`
-  generates geometric random walks over the configured calendar; this repository fetches no
-  market data, and `load_prices` requires a `data/prices.parquet` the user supplies. There is
-  nothing in these series to forecast, so the return columns are arithmetic and only the
-  behavioural columns are readable.
-- **One asset class, one market, one path.** Nothing here generalises beyond it. This applies
-  to a run supplied with real history; under synthetic prices there is no market to
-  generalise from at all.
+- **The debate ran on a sample, and it costs the return comparison its power.**
+  [`council.sampling`](src/council/sampling.py) thins the contested points to a budget —
+  evenly spread over each ticker's calendar, and nested, so a larger budget contains a
+  smaller one. Shortening the study period instead would have changed what was measured:
+  two years hold a drawdown, a recovery and a flat stretch, and the one regime-dependent
+  result this design has produced says those are not interchangeable. What it costs is
+  stated rather than hidden — a treatment arm differs from the control on **50 of 1,002**
+  decision points, so the four arms' returns would agree to three decimal places whether
+  or not debate affected them. The behavioural measurements are computed per debated
+  point and are unaffected.
+- **Recognition is a live risk, not a hypothetical.** Every model was trained on data
+  covering 2022–2023, and these are two of the most written-about instruments in it.
+  Agents see normalised returns with no dates, no tickers and no price levels
+  ([`data/context.py`](src/council/data/context.py)), which reduces recognition and
+  cannot prove its absence. A distinctive drawdown shape is still a shape.
+- **Prices are back-adjusted.** `auto_adjust` makes the return series continuous through
+  splits and dividends, which is the right input for a total-return backtest and the
+  wrong one for claiming any fill was achievable.
+- **One asset class, one market, one path.** Nothing here generalises beyond it. Two
+  instruments, two years, four models, one machine.
 - **Ticker selection carries hindsight.** Mitigated by stating the selection rule in
   [`config.py`](src/council/config.py) before choosing — the largest company by market
-  capitalisation in each of two dissimilar sectors, as of the start date — but not removed.
-  This too applies only to a run supplied with real history: under synthetic prices the
-  ticker is an RNG seed and carries no hindsight.
+  capitalisation in each of two dissimilar sectors, as of the start date — but not
+  removed.
 
 ---
 
@@ -306,9 +332,10 @@ uv run pytest -m gpu
 ```
 
 Two stages are expensive and both resume from what is already on disk. Generation
-checkpoints per (model, persona, ticker). The debate sweep is the larger bill by an order
-of magnitude — at the shipped four-model settings it is 177,024 inferences against
-generation's 14,752, about twelve times the independent arm — and it checkpoints per
+checkpoints per (model, persona, ticker). The debate sweep is the larger bill by far —
+on the published run the independent arm was 16,032 inferences (~5h) and the debate
+arms 24,936 rows over a 50-point sample; unsampled, the same debate prices at ~578,000
+inferences, which is why `max_debate_points` exists — and it checkpoints per
 (committee, arm, ticker), which is what a group *is* for a debate. An interrupted run of
 either regenerates only what is missing. `COUNCIL_CUDA_VISIBLE_DEVICES` pins the process
 to one card, which matters on a machine doing other work.
@@ -342,8 +369,12 @@ runs on its own subcommand and writes its trials beside the other artefacts:
 
 ```bash
 uv run python -m council probe --mock          # no daemon, no GPU
-uv run python -m council probe --model qwen3:8b
+uv run python -m council probe --model qwen3.5:9b --out data/probe/qwen3.5-9b.jsonl
 ```
+
+Pass `--out` with a per-model path. The default output path is shared, so sequential
+runs of different models silently overwrite each other — which is exactly what
+happened to the published probe table (`CLAIMS.md` D13).
 
 ## Status
 
@@ -352,11 +383,28 @@ uv run python -m council probe --model qwen3:8b
 - [x] Provider, agent runner, debate protocol, evaluation
 - [x] End-to-end dry run on the mock provider
 - [x] Dashboard and the results write-up
-- [ ] A current generation run and results. Two runs were completed — two models, then
-      four — and **both are superseded**: each covered a six-month window that was never
-      chosen, against the two-year range `config.py` declares, and each was scored with a
-      floating-point comparison since replaced. The two-model run's artefacts are under
-      [`docs/results/superseded/`](docs/results/superseded/) and are marked as such; the
-      four-model run's were kept only in `data/` and are gone, so every figure quoted
-      from it — `CLAIMS.md` C14's 138/140 and `findings.md` section 4's screen — cannot
-      be rechecked. **There is no current run.**
+- [x] A current generation run and results. Four models, four personas, eight committees,
+      real split- and dividend-adjusted bars for AAPL and XOM, decisions on all 501
+      sessions from 2022-01-03 to 2023-12-29. **40,968 stored decisions, zero generation
+      failures.** Artefacts at
+      [`docs/results/run-4models-2y/`](docs/results/run-4models-2y/), and
+      `tests/test_docs_findings.py` recomputes the published shift table from them, so a
+      figure in [`findings.md`](docs/findings.md) that drifts from the parquet fails the
+      suite. Two earlier runs — two models, then four — are **superseded**: each covered a
+      six-month window that was never chosen, each ran on synthetic prices, and each was
+      scored with a floating-point comparison since replaced. The two-model run's
+      artefacts are under [`docs/results/superseded/`](docs/results/superseded/); the
+      four-model run's were kept only in `data/` and are gone, so figures quoted from it
+      cannot be rechecked.
+- [x] Re-run the probe with per-model output paths and a model field on every row.
+      The first publication's four runs overwrote one file (`CLAIMS.md` D13); the
+      re-run's artefacts at
+      [`docs/results/run-4models-2y/probe/`](docs/results/run-4models-2y/probe/)
+      confirmed the printed table to the digit, bar one denominator (phi4 0/24 for
+      0/23 -- regeneration noise, D12).
+- [ ] The one arm that would settle the open question: peers who contradict *coherently*
+      — relevant to the day, arguing for the wrong conclusion. Until it runs, the headline
+      result bounds the argument's content and not the reader's response to being
+      contradicted. See D8 in [`CLAIMS.md`](docs/CLAIMS.md), and the specification at the
+      end of [`findings.md`](docs/findings.md) for the metric and peer-schedule pins the
+      comparison needs.

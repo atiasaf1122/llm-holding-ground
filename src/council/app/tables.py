@@ -169,12 +169,15 @@ def shift_rate_table(reports: Mapping[str, ArmShifts]) -> pd.DataFrame:
 def coverage_table(frame: pd.DataFrame) -> pd.DataFrame:
     """What each arm covers, so that two shift rates can be differenced knowingly.
 
-    The placebo arm needs an earlier day to borrow a counter-argument from, and
-    :mod:`council.debate.sweep` abandons the conversations that have none -- so
-    the placebo covers strictly fewer decision points than the debate arm it is
-    subtracted from. That gap is a coverage effect and it is invisible in a rate,
-    which is exactly the shape of an artefact that would be published as a
-    finding.
+    Under the shipped design the three treatment arms cover one identical point set
+    -- a point with no placebo donor is withheld from **all three**
+    (:func:`council.debate.sweep.servable_points`), precisely so no arm difference
+    can be a coverage difference, and on the published run all three hold the same
+    50 points. This table is the *check* on that invariant rather than a report of
+    an expected gap: an interrupted sweep resumed against changed settings, or a
+    future design change, is how the arms drift apart, and a coverage effect is
+    invisible in a rate -- exactly the shape of an artefact that would be published
+    as a finding.
 
     Columns:
         ``points`` distinct decision points the arm holds a row for;
@@ -214,12 +217,12 @@ def coverage_note(coverage: pd.DataFrame) -> str | None:
         return None
     return (
         "The debate arms do not cover the same decision points -- "
-        + ", ".join(
-            f"{row.arm} {row.points}" for row in debated.itertuples(index=False)
-        )
-        + ". A conversation with no earlier day to borrow a counter-argument from "
-        "is abandoned, which costs the placebo arm points the debate arm keeps, so "
-        "part of any gap between their rates is coverage rather than persuasion."
+        + ", ".join(f"{row.arm} {row.points}" for row in debated.itertuples(index=False))
+        + ". The design withholds a point any arm cannot serve from all three "
+        "(council.debate.sweep.servable_points), so unequal coverage means this run "
+        "violated that invariant -- an interrupted sweep resumed under different "
+        "settings is the usual cause -- and part of any gap between the arms' rates "
+        "is coverage rather than behaviour. Do not difference these rates."
     )
 
 

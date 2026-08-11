@@ -53,15 +53,17 @@ opposite conclusions -- one sees a trend to join, the other an overshoot to fade
 That is a genuine disagreement about the world, and it is also how real analysts
 actually differ.
 
-Measured outcome, on the first slice: momentum-bold averaged **+0.536** and
-reversion-bold **-0.641**, with every one of 140 decision points showing a
-directional split. See [findings](findings.md#2-the-dispersion-gate).
+Measured outcome, on the published two-year real-price run: momentum-bold averaged
+**+0.348** and reversion-bold **-0.688**, the sign holding for every one of the four
+models, with 984 of 1,002 decision points contested on the pooled grid. See
+[findings section 7](findings.md#7-the-dispersion-gate-is-measured-on-the-wrong-unit).
 
 **The honest qualification** belongs here rather than in a footnote: part of that
 disagreement is guaranteed by construction. What keeps it from being circular is
-that each persona's exposure *varies* with the data (within-persona standard
-deviations of 0.17 to 0.49), so they are reading the series rather than emitting a
-constant.
+that each persona's exposure *varies* with the data -- within-(persona, model)
+standard deviations run 0.07 to 0.76 on the published run, and the 0.07 corner
+(qwen3.5's reversion-cautious) is close enough to a constant that the qualification
+is not fully discharged for that one seat.
 
 ---
 
@@ -98,21 +100,21 @@ round the cap allows, so there are contested points it cannot answer. Those poin
 withheld from **all three** arms rather than from the placebo alone: the three answer
 an identical set, and a debate-minus-placebo difference is a difference in treatment
 rather than partly a difference in which days each arm saw. What the filter costs the
-experiment is the start of the calendar -- the first 60 decision dates in either case:
-60 of 461 dates (120 of 922 points) at the configured range, and 60 of 70 dates
-(120 of 140 contested points) on the six-month slice. `debate.sweep.servable_points`
+experiment is the start of the calendar. On the published run: 10 of the 60 sampled
+points, all in the first sixty sessions. (Unsampled, the same gap costs the first 60
+decision dates outright -- the superseded six-month runs lost 60 of 70 dates (120 of 140 contested points) to it,
+which is why the gap is a first-class setting.) `debate.sweep.servable_points`
 applies the filter, `run_debate_arms` puts the count on its report and the command
 line prints it, and `council.app.tables.coverage_note` reports what each arm holds.
 The cost that remains is against the *control*, which keeps every point: the treatment
 arms are backtested over a later slice than the independent arm.
 
-The draw also constrains only the date and not the ticker, so debate-minus-placebo
-differences instrument identity along with day relevance.
-
-The probe already produced a hint that this matters: one model abandoned a correct
-answer *more* often against an irrelevant argument than a pertinent one. At that
-sample size it means nothing, but it is precisely the shape the placebo arm exists
-to catch.
+The draw also constrains only the date and not the ticker -- on the published run
+**49% of donors are the other instrument** -- so debate-minus-placebo differences
+instrument identity along with day relevance, and the placebo cannot separate
+"reacting to contradiction" from "reacting to an argument that cannot be reconciled
+with the data in view". Both are registered defects (`CLAIMS.md` D8, D14) and both
+sit directly under the headline result.
 
 ---
 
@@ -205,19 +207,24 @@ are computed from; they are not folded into the shift rate.
 
 **Only where there is disagreement.** On a point where the agents already agree, a
 conversation cannot change the committee's decision. This was expected to be the
-main compute saving; on the first configuration the contested share came out at
-**100%**, so it saved nothing. The mechanism is still right and stays in.
+main compute saving; on the two-year run the contested share came out at **984 of
+1,002, 98.2%**, so it saved almost nothing. The mechanism is still right and stays in.
 
 **The gate is measured on the pooled grid, not on the committee.**
 `pipeline.select_contested` measures dispersion once, over the whole independent arm
 pooled across every model and every persona, and `debate.sweep.run_debate_arms` applies
-that single list unchanged to all eight committees. So 100% is the share for the pooled
+that single list unchanged to all eight committees. So 98.2% is the share for the pooled
 grid, not for the committee that actually holds the conversation — and the sentence above
-justifies the gate per committee. Recomputed per committee on the superseded two-model
-run, the share is **449 of 1,120, 40%**: rotations 56, 125, 70 and 123 of 140, uniforms
-3, 11, 30 and 31 of 140. At the unit the justification is stated in, the gate is not
-vacuous. Whether it saves anything at that unit has never been measured, because the
-sweep has never been run per committee.
+justifies the gate per committee. Recomputed per committee on the two-year run, the
+share is **4,728 of 8,016, 59.0%**, ranging from 98.5% for `rotation-3` down to 19.0%
+for `uniform-reversion-bold`. At the unit the justification is stated in, the gate is
+not vacuous — it is simply not applied there, and what it would save there has still
+never been measured, because the sweep has never been run per committee.
+
+That gap is not bookkeeping. A uniform committee is handed points on which its own four
+seats agreed, debates them anyway, and reaches `agreement_spread` within two rounds
+92% of the time. Read without the per-committee share, that looks like four agents
+persuading each other quickly. It is four agents who never disagreed.
 
 ---
 
@@ -231,8 +238,9 @@ wins. Averaged over enough decisions the noise cancels -- but the events of inte
 here are rare (a confident agent facing unanimous opposition), and rare events do
 not average.
 
-So the [probe](findings.md#1-the-capitulation-probe) asks the same question on items
-where the answer is known, and reports two rates side by side:
+So the [probe](findings.md#4-on-questions-with-a-right-answer-none-of-them-capitulates)
+asks the same question on items where the answer is known, and measures two rates
+(the write-up publishes capitulation; correction lives in the trials archive):
 
 - **capitulation** -- abandoning a correct answer
 - **correction** -- abandoning a wrong one
@@ -242,11 +250,13 @@ scores perfectly on the first and zero on the second, and that is not a good mod
 **Reporting either alone would be misleading**, and this is where the two-sided
 framing earns its place: it removes "never change your mind" as a way to look good.
 
-The probe's own limit is stated in [findings](findings.md#three-caveats-that-matter-more-than-the-numbers)
-and is worth repeating here: **holding a fact is not holding a judgement.** A model
-that defends a verifiable answer may still yield on an opinion. The probe bounds one
-thing -- these models are not reflexive capitulators -- and does not predict the
-market arms.
+The probe's own limit is worth stating here: **holding a fact is not holding a
+judgement.** A model that defends a verifiable answer may still yield on an opinion.
+The probe bounds one thing -- these models are not reflexive capitulators -- and does
+not predict the market arms. On the published run the bound is sharp: two
+capitulations across all four models' 89 challenged trials (per model: 1, 1, 0, 0), against 32-38% movement on the
+market question (16-21% counting only sign reversals, the nearest like-for-like
+metric; the cross-domain contrast is qualitative either way, see findings section 4).
 
 ---
 
@@ -263,12 +273,11 @@ anything would answer that question with itself. So confidence is stored,
 [calibration is measured](../src/council/evaluation/calibration.py), and a
 confidence-weighted rule becomes available only if the measurement supports it.
 
-The probe made the point concretely. On factual items **every trial from both models
-landed in the top confidence bucket** regardless of whether the answer was right --
-so on that task confidence carries no information at all. On market judgements the
-same models produced a spread from 0.20 to 0.85. Same models, same schema; the
-distribution of self-reported confidence depends entirely on the kind of question.
-That alone justifies measuring rather than assuming.
+The published run made the point at scale: over **15,206** independent-arm decisions,
+the correlation between stated confidence and being right is **-0.015** -- a flat
+line, hit rates 0.48-0.51 in every band (`CLAIMS.md` C26). A committee weighted by
+self-reported confidence would be weighted by noise. That is the measurement the
+rule waited for, and it says no.
 
 ---
 

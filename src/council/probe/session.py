@@ -29,6 +29,21 @@ from council.probe.runner import ProbeTrial, ProbeTurn, run_probe
 from council.probe.store import write_trials
 
 PROBE_FILENAME: Final = "probe.jsonl"
+"""Retained for readers of old artefacts; no longer the default target.
+
+Four sequential runs against this one fixed name each overwrote the last, which is
+how the published probe table came to rest on a single surviving model's file
+(``CLAIMS.md`` D13). The default is now :func:`probe_target`, which puts the model's
+tag in the filename."""
+
+
+def probe_target(data_dir: Path, tag: str) -> Path:
+    """Where one model's probe trials go by default: a per-model file.
+
+    The tag's colon becomes a dash because it is a filename on Windows too.
+    """
+    return data_dir / "probe" / f"probe-{tag.replace(':', '-')}.jsonl"
+
 
 ALL_CONDITIONS: Final[tuple[Condition, ...]] = (Condition.CHALLENGE, Condition.PLACEBO)
 """Both, by default. The placebo is what decides whether the headline is a
@@ -83,8 +98,8 @@ async def probe_model(
             and averaging two of them describes neither.
         edges: the confidence bands to partition by. Exposed so a run can be scored
             at a different cut without regenerating it.
-        target: where the trials archive goes; defaults to ``probe.jsonl`` beside
-            the other artefacts.
+        target: where the trials archive goes; defaults to :func:`probe_target`,
+            a per-model file, so two models' runs cannot overwrite each other.
 
     Returns:
         The run. The archive is written *before* the report is built, so an
@@ -107,7 +122,9 @@ async def probe_model(
     finally:
         await provider.aclose()
 
-    archive = write_trials(trials, settings.data_dir / PROBE_FILENAME if target is None else target)
+    archive = write_trials(
+        trials, probe_target(settings.data_dir, tag) if target is None else target, model=tag
+    )
     return ProbeRun(
         model=tag, trials=trials, report=build_report(trials, edges=edges), archive=archive
     )

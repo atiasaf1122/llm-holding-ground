@@ -1,5 +1,4 @@
-"""The write-up prints the numbers the shipped code produces, and withdraws what
-has been withdrawn.
+"""The write-up prints the numbers the shipped code produces.
 
 ``docs/findings.md`` is prose beside a stored artefact, which is the one place a
 correction can be applied to the code and to ``docs/CLAIMS.md`` and still leave a
@@ -8,8 +7,9 @@ replaced a bare ``distance >= threshold`` with
 :func:`council.evaluation.threshold.meets`, rewrote C8-C11 and added D2-D5, and left
 this document printing the pre-fix rates and reading conclusions off them.
 
-So the table is recomputed here from the same stored decisions rather than trusted,
-and the findings the claims register has withdrawn are checked to say so.
+So the table is recomputed here from the stored decisions rather than trusted, and
+the caveats the register records are checked to appear where a reader meets the
+number they qualify.
 """
 
 from __future__ import annotations
@@ -21,17 +21,15 @@ import pytest
 
 from council.config import PROJECT_ROOT
 from council.domain.signal import Arm
+from council.evaluation.frames import frame_to_rows
 from council.evaluation.persuasion import shift_rate_by_confidence, shifts
 from council.scoring import rows_in_arm
 
 FINDINGS = PROJECT_ROOT / "docs" / "findings.md"
 CLAIMS = PROJECT_ROOT / "docs" / "CLAIMS.md"
-DECISIONS = (
-    PROJECT_ROOT / "docs" / "results" / "superseded" / "run-2models" / "decisions.parquet"
-)
-"""Under ``superseded/``: the run these figures came from used a six-month window that
-was never chosen, so its artefacts were retired there rather than deleted. This test
-still recomputes the published table from them, because the table is published."""
+DECISIONS = PROJECT_ROOT / "docs" / "results" / "run-4models-2y" / "decisions.parquet"
+"""The artefact the write-up reports. Published rather than left in ``data/`` so that
+a reader can recompute the table, and so that this test can."""
 
 PUBLISHED_ARMS: tuple[Arm, ...] = (Arm.DEBATE, Arm.DEBATE_PLACEBO, Arm.DEBATE_RATIONALE_ONLY)
 """The three columns of the shift-rate table, in the order it prints them."""
@@ -45,6 +43,10 @@ dash in the document and has no business being pasted into a pattern."""
 
 CELL = re.compile(r"(\d\.\d{3})\**\s*\((\d+)\)")
 """``rate (count)``, with the bold markers the placebo column wears ignored."""
+
+MINUS = "\u2212"
+"""The typographic minus the documents print negatives with; normalised to a hyphen
+before any interval string is matched."""
 
 Cells = list[tuple[str, int]]
 
@@ -83,105 +85,128 @@ def test_the_published_shift_table_is_what_the_shipped_code_computes(
     published: pd.DataFrame,
 ) -> None:
     table = published_table()
-    assert len(table) == 4, "the table lost or gained a confidence band"
+    assert len(table) == 5, "the table lost or gained a confidence band"
 
     for column, arm in enumerate(PUBLISHED_ARMS):
         printed = {lower: cells[column] for lower, cells in table.items()}
         assert printed == recomputed(published, arm), arm
 
 
-@pytest.mark.parametrize(("finding", "withdrawal"), [(2, "D2"), (3, "D3"), (4, "D4")])
-def test_a_finding_the_claims_register_withdrew_does_not_still_state_its_result(
-    finding: int, withdrawal: str
+def test_the_pooled_rates_the_headline_rests_on_are_the_stored_ones(
+    published: pd.DataFrame,
 ) -> None:
-    # A withdrawal recorded only in CLAIMS.md leaves the conclusion standing in the
-    # document a reader actually reads.
-    document = FINDINGS.read_text(encoding="utf-8")
-    heading = next(
-        line for line in document.splitlines() if line.startswith(f"### Finding {finding} ")
-    )
-    body = document.split(heading)[1].split("\n### ")[0]
+    """The three numbers a reader takes away, checked against the parquet.
 
-    assert "withdrawn" in heading.lower()
-    assert withdrawal in body
+    The banded table above is recomputed cell by cell, but the sentence under it
+    quotes one pooled rate per arm and that is what gets repeated. It has its own
+    way of drifting: a band added, dropped or reweighted changes the pooled figure
+    without touching a single cell.
+    """
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split())
+    for arm, printed in (
+        (Arm.DEBATE, "debate **0.324**"),
+        (Arm.DEBATE_RATIONALE_ONLY, "rationale-only **0.323**"),
+        (Arm.DEBATE_PLACEBO, "placebo **0.383**"),
+    ):
+        moved = [shift.shifted for shift in shifts(rows_in_arm(published, arm), threshold=0.20)]
+        assert f"{sum(moved) / len(moved):.3f}" in printed, arm
+        assert printed in document, arm
 
 
-def test_the_placebo_contamination_is_recorded_against_the_claim_that_rests_on_it() -> None:
-    # The published placebo drew its donors from inside the lookback window, so the
-    # arm C8 is read off was not inert. Recorded as a defect, and C8 pointed at it.
+# -- the caveats sit where the number they qualify does ----------------------------
+
+
+def test_the_headline_is_stated_with_an_interval_rather_than_a_bare_difference() -> None:
+    """A 6pp gap over 50 decision points is a claim about a distribution.
+
+    The arms differ by more than this between confidence bands, and observations
+    inside one decision point are not independent -- so a difference printed without
+    the interval it survives is a number a reader cannot weigh.
+    """
+    section = FINDINGS.read_text(encoding="utf-8").split("## 1. The placebo moves")[1]
+    body = " ".join(section.split("\n## ")[0].split())
+
+    assert "95% CI" in body
+    assert "[+3.31, +8.75]" in body
+    assert "paired by decision point" in body
+
+
+def test_the_headline_does_not_claim_the_mechanism_the_design_cannot_separate() -> None:
+    """C8 supports "not the argument's content" and nothing about contradiction.
+
+    The placebo peer argues about another day, so its argument is incoherent against
+    the reader's data and not merely irrelevant. Reacting to being contradicted and
+    failing to place an argument are different behaviours; no arm here separates
+    them, and the register carries that as D8.
+    """
     claims = CLAIMS.read_text(encoding="utf-8")
     c8 = claims.split("C8.")[1].split("C9.")[0]
+    findings = FINDINGS.read_text(encoding="utf-8")
 
-    assert "\nD6." in claims
-    assert "D6" in c8
+    assert "\nD8." in claims
+    assert "incoherent" in " ".join(findings.split()).lower()
+    assert "D8" in findings, "the write-up meets the caveat, so it carries the pointer"
+    assert "reacting to contradiction" not in " ".join(c8.split()).lower()
+
+
+def test_the_anchoring_finding_separates_convergence_from_mind_changing() -> None:
+    """The one result that would read as its opposite if either half were dropped.
+
+    Spread narrows most in the full debate arm while the shift rate is flat against
+    rationale-only. Quoted alone, the first says peers persuade and the second says
+    they do not.
+    """
+    body = " ".join(
+        FINDINGS.read_text(encoding="utf-8")
+        .split("## 2. Seeing peers' numbers")[1]
+        .split("\n## ")[0]
+        .split()
+    )
+
+    assert "+0.12pp" in body, "the shift-rate half"
+    assert "1.264" in body and "0.703" in body, "the spread half"
+
+
+def test_the_returns_table_is_marked_as_description_rather_than_evidence() -> None:
+    """Fifty debated points of 1,002 cannot test whether debate changes returns.
+
+    The four arms' returns agreeing to three decimal places is what a diluted
+    comparison looks like, not what a null result looks like, and the difference is
+    invisible unless the document says so.
+    """
+    body = " ".join(
+        FINDINGS.read_text(encoding="utf-8")
+        .split("## 6. Nobody made any money")[1]
+        .split("\n## ")[0]
+        .split()
+    )
+
+    assert "50 of 1,002" in body
+    assert "not evidence" in body or "not a test" in body
+
+
+def test_the_probe_does_not_order_the_models() -> None:
+    """Three of four net rates are exactly zero and the fourth is one event.
+
+    The earlier version of this claim ranked two models on a difference of zero
+    events, which is D7. The corpus is the same size; the temptation is the same.
+    """
+    claims = CLAIMS.read_text(encoding="utf-8")
+    c12 = " ".join(claims.split("C12.")[1].split("C13.")[0].split())
+    section = " ".join(
+        FINDINGS.read_text(encoding="utf-8")
+        .split("## 4. On questions with a right answer")[1]
+        .split("\n## ")[0]
+        .split()
+    )
+
+    assert "does not order" in c12
+    assert "does **not** order the models" in section
+    assert "upper bound" in c12 and "upper bound" in section
 
 
 def test_the_write_up_no_longer_calls_the_placebo_day_unrelated() -> None:
     assert "about a different day entirely" not in FINDINGS.read_text(encoding="utf-8")
-
-
-# -- the register does not re-assert what the write-up withdrew --------------------
-
-
-@pytest.mark.parametrize(
-    ("claim", "following", "finding"), [("C9.", "C10.", 2), ("C10.", "C11.", 3)]
-)
-def test_a_claim_over_a_withdrawn_column_states_no_conclusion(
-    claim: str, following: str, finding: int
-) -> None:
-    # findings.md says of both columns: "The conclusion is withdrawn rather than
-    # replaced. Nothing is asserted here about what the corrected column says." The
-    # register quoted the same four figures and drew the conclusion anyway, so a
-    # reader could not tell whether the project stood behind the reading.
-    body = CLAIMS.read_text(encoding="utf-8").split(claim)[1].split(following)[0]
-
-    assert "therefore" not in body
-    assert "No conclusion" in body
-    assert f"Finding {finding} is withdrawn" in " ".join(body.split())
-
-
-def test_c12_does_not_order_two_models_on_a_difference_of_zero_events() -> None:
-    # Both models capitulated exactly once on the probe (1/22 and 1/21), so the
-    # rates differ only because the denominators do; and the market ordering
-    # reverses in the placebo, which is the disagreement D4 cites.
-    claims = CLAIMS.read_text(encoding="utf-8")
-    c12 = claims.split("C12.")[1].split("C13.")[0]
-
-    assert "held facts better" not in c12
-    assert "UNSUPPORTED" in c12
-    assert "D7" in c12
-    assert "\nD7." in claims
-
-
-def test_the_probe_reversal_subsection_is_withdrawn_in_the_write_up() -> None:
-    document = FINDINGS.read_text(encoding="utf-8")
-    heading = next(
-        line for line in document.splitlines() if line.startswith("### The reversal against")
-    )
-    body = document.split(heading)[1].split("\n### ")[0].split("\n## ")[0]
-
-    assert "withdrawn" in heading.lower()
-    assert "D7" in body
-
-
-def test_c13_carries_its_sample_rather_than_a_universal_quantifier() -> None:
-    # Four models, two up-drifts and two down-drifts of one synthetic series, 16
-    # calls each. Two falling windows cannot license "every", "none" or "whatever
-    # persona" -- and the claim was then reused as a property of the study period.
-    c13 = " ".join(CLAIMS.read_text(encoding="utf-8").split("C13.")[1].split("C14.")[0].split())
-
-    assert "Every model separates" not in c13
-    assert "whatever persona it wears" not in c13
-    assert "16-call screen" in c13
-    assert "not a demonstration" in c13
-
-
-def test_the_write_up_softens_the_same_sentence_c13_carried() -> None:
-    section = FINDINGS.read_text(encoding="utf-8").split("### What the corrected check")[1]
-    body = " ".join(section.split("\n### ")[0].split())
-
-    assert "none of these models will go long into a drawdown" not in body
-    assert "hypothesis" in body
 
 
 def test_c3_states_the_balance_property_the_design_actually_has() -> None:
@@ -192,3 +217,231 @@ def test_c3_states_the_balance_property_the_design_actually_has() -> None:
     assert "at every persona exactly once" not in c3
     assert "the same number of times" in c3
     assert "uniform references" in c3
+
+
+def test_the_superseded_defects_are_kept_rather_than_deleted() -> None:
+    """D2-D7 describe classes of error, not one run's arithmetic.
+
+    A float comparison on a grid, a control that is not inert, and an ordering built
+    on one event are all live risks in the current design. Deleting them with the
+    figures they attacked would delete the reason each check exists.
+    """
+    claims = CLAIMS.read_text(encoding="utf-8")
+
+    assert "Superseded defects, retained for provenance" in claims
+    for defect in ("D2", "D7"):
+        assert defect in claims
+    assert "docs/results/superseded/" in claims
+
+
+# -- the confidence result, and the half of it that was withheld -------------------
+
+
+def test_the_calibration_figures_are_the_ones_the_artefact_holds(
+    published: pd.DataFrame,
+) -> None:
+    """Confidence against being right, recomputed rather than quoted.
+
+    The largest sample in the study, and the one number here a reader is most likely
+    to carry off and act on: a committee weighted by self-reported confidence is
+    weighted by noise. So it is checked against the parquet like the shift table.
+    """
+    from council.evaluation.calibration import calibrate
+    from council.evaluation.frames import forward_returns, forward_returns_lookup
+    from council.scoring import _scoring_window
+
+    prices = pd.read_parquet(DECISIONS.parent / "prices.parquet")
+    prices["date"] = pd.to_datetime(prices["date"])
+    opens = prices.pivot(index="date", columns="ticker", values="open")
+    control = rows_in_arm(published, Arm.INDEPENDENT)
+    window = _scoring_window(opens, rows=frame_to_rows(control))
+    report = calibrate(control, forward_returns_lookup(forward_returns(window)))
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split())
+
+    # The document prints negatives with U+2212; normalise before matching so the
+    # comparison is about the digits rather than the typography.
+    minus_sign = "−"  # noqa: RUF001 -- the document really does use U+2212
+    assert f"{report.scored_count:,}" in document, "the sample size drifted"
+    assert f"{report.correlation:+.3f}".replace("+", "") in document.replace(minus_sign, "-")
+    assert f"{report.hit_rate * 100:.1f}%" in document
+
+
+def test_the_confidence_and_holding_claim_is_withheld_with_its_confound() -> None:
+    """The uncontrolled correlation looks like a result and is not one.
+
+    Confidence and position extremity correlate at +0.675, and an extreme position
+    has less room to move. Withholding the claim is only honest if the reason travels
+    with it -- otherwise the raw figure gets picked back up by the next reader.
+    """
+    claims = " ".join(CLAIMS.read_text(encoding="utf-8").split())
+    section = " ".join(
+        FINDINGS.read_text(encoding="utf-8")
+        .split("### The half that does not survive its own check")[1]
+        .split("\n## ")[0]
+        .split()
+    )
+
+    assert "is NOT claimed" in claims
+    assert "+0.675" in claims and "+0.675" in section
+    assert "The claim is withheld" in claims
+    assert "claim is **not made**" in section
+
+
+def test_the_register_records_the_persona_confound() -> None:
+    """What the results are *about*, as distinct from whether they hold.
+
+    Every agent is instructed into its view, so "held its ground" and "stayed in
+    role" fit the same rows. It cannot produce any measured difference -- all arms
+    carry the same instruction -- but it bounds every sentence written about them.
+    """
+    claims = CLAIMS.read_text(encoding="utf-8")
+    d10 = " ".join(claims.split("D10.")[1].split("D9.")[0].split())
+
+    assert "\nD10." in claims
+    assert "stay in role" in d10
+    assert "Everything measured survives this" in d10
+    assert "language models defend their beliefs" in d10
+
+
+# -- the interval the headline rests on, recomputed rather than trusted ------------
+
+
+def test_the_published_intervals_are_what_the_shipped_bootstrap_computes(
+    published: pd.DataFrame,
+) -> None:
+    """The one inferential statistic in the study, tied to the artefact.
+
+    Before this test the CI was asserted as a markdown string and computed by no code
+    in the repository -- the exact drift channel this file exists to close, on the
+    number a reader is most likely to repeat. The bootstrap is seeded by draw index,
+    so these reproduce to the digit from the parquet alone.
+    """
+    from council.evaluation.intervals import paired_shift_gap
+
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split()).replace(MINUS, "-")
+
+    placebo_debate = paired_shift_gap(
+        published, minuend_arm="debate_placebo", subtrahend_arm="debate", threshold=0.20
+    )
+    assert placebo_debate.points == 50
+    assert f"[{placebo_debate.lower_pp:+.2f}, {placebo_debate.upper_pp:+.2f}]" == "[+3.31, +8.75]"
+    assert f"**{placebo_debate.mean_pp:+.2f}pp**" in document
+    assert placebo_debate.excludes_zero()
+
+    flat = paired_shift_gap(
+        published, minuend_arm="debate", subtrahend_arm="debate_rationale_only", threshold=0.20
+    )
+    assert f"{flat.mean_pp:+.2f}pp" in document
+    assert not flat.excludes_zero(), "the null comparison the anchoring finding rests on"
+
+
+def test_the_stratified_and_per_model_intervals_reproduce(published: pd.DataFrame) -> None:
+    """The audit-round figures: the confounded stratum, the clean one, and granite.
+
+    The write-up now quotes the rotation stratum as the defensible effect and
+    concedes granite4.1's interval spans zero. Both concessions are numbers, so both
+    are recomputed -- a caveat that drifts is worse than none, because it wears the
+    uniform of a check.
+    """
+    from council.evaluation.intervals import paired_shift_gap
+
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split()).replace(MINUS, "-")
+    frame = published.assign(
+        _uniform=published["composition"].astype(str).str.startswith("uniform")
+    )
+
+    rotation = paired_shift_gap(
+        frame.loc[frame["_uniform"] != True],  # noqa: E712 -- NaN-bearing column, keep NaN rows out of uniform only
+        minuend_arm="debate_placebo",
+        subtrahend_arm="debate",
+        threshold=0.20,
+    )
+    assert f"[{rotation.lower_pp:+.2f}, {rotation.upper_pp:+.2f}]" in document
+    assert rotation.excludes_zero(), "the defensible stratum still excludes zero"
+
+    granite = paired_shift_gap(
+        published.loc[published["model"] == "granite4.1:8b"],
+        minuend_arm="debate_placebo",
+        subtrahend_arm="debate",
+        threshold=0.20,
+    )
+    assert f"[{granite.lower_pp:+.2f}, {granite.upper_pp:+.2f}]" in document
+    assert not granite.excludes_zero(), "the concession the replication claim now carries"
+
+
+def test_the_endpoint_reversal_reproduces_and_is_published_beside_the_headline(
+    published: pd.DataFrame,
+) -> None:
+    """C28: the round-0-to-1 ordering inverts over whole conversations.
+
+    The single most consequential audit finding: the headline arm ordering is
+    specific to the first round, and a reader shown only round 0-to-1 would carry
+    away "irrelevant text moves agents more than argument" -- which the same
+    artefact contradicts at the conversation's end. Both halves are now published,
+    so both halves are recomputed.
+    """
+    from council.evaluation.intervals import net_shift_gap
+
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split()).replace(MINUS, "-")
+    rotations = published.loc[
+        ~published["composition"].astype(str).str.startswith("uniform")
+        | published["composition"].isna()
+    ]
+
+    net = net_shift_gap(
+        rotations, minuend_arm="debate_placebo", subtrahend_arm="debate", threshold=0.20
+    )
+    assert f"[{net.lower_pp:+.2f}, {net.upper_pp:+.2f}]" == "[-14.12, -8.00]"
+    assert f"{net.mean_pp:.2f}pp" in document
+    assert net.upper_pp < 0, "the reversal is significant, not a trend"
+
+    pooled = net_shift_gap(
+        published, minuend_arm="debate_placebo", subtrahend_arm="debate", threshold=0.20
+    )
+    assert f"[{pooled.lower_pp:+.2f}, {pooled.upper_pp:+.2f}]" in document
+
+
+# -- the probe table, recomputed from the per-model artefacts ----------------------
+
+
+def test_the_probe_table_reproduces_from_the_per_model_artefacts() -> None:
+    """D13's resolution, held: every row attributable, every rate recomputable.
+
+    The first publication of this table rested on printed output because four runs
+    overwrote one file whose rows carried no model field. The re-run artefacts carry
+    one file per model and a tag on every row; this recomputes capitulation under
+    the shipped rule -- both verdicts gradable, opened correct, final not correct --
+    and matches it against the published cells.
+    """
+    import json
+
+    published_rows = {
+        "qwen3.5:9b": ((1, 20), (1, 21)),
+        "granite4.1:8b": ((1, 22), (1, 22)),
+        "phi4:14b": ((0, 24), (0, 24)),
+        "gemma4:12b": ((0, 23), (0, 23)),
+    }
+    probe_dir = DECISIONS.parent / "probe"
+
+    seen = {}
+    for path in sorted(probe_dir.glob("probe-*.jsonl")):
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        tags = {row["model"] for row in rows}
+        assert len(tags) == 1, f"{path.name} holds rows from {tags}"
+        (tag,) = tags
+        rates = []
+        for condition in ("challenge", "placebo"):
+            graded = [
+                row
+                for row in rows
+                if row["condition"] == condition
+                and row["final"] is not None
+                and row["opening"]["verdict"] != "ungraded"
+                and row["final"]["verdict"] != "ungraded"
+            ]
+            right = [row for row in graded if row["opening"]["verdict"] == "correct"]
+            capitulated = [row for row in right if row["final"]["verdict"] != "correct"]
+            rates.append((len(capitulated), len(right)))
+        seen[tag] = tuple(rates)
+
+    assert seen == published_rows

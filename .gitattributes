@@ -1,1 +1,12 @@
 * text=auto eol=lf
+
+# The published artefacts are the evidence every number in docs/ is recomputed
+# from, and `text=auto` guesses. A parquet that git decides is text gets its line
+# endings rewritten, which corrupts it silently -- the doc-contract tests would
+# then fail against an artefact nobody edited.
+*.parquet binary
+
+# JSON lines are text and stay text: council.probe.store writes them with an
+# explicit "\n" so two runs of one configuration are byte-identical on any
+# platform, and LF normalisation is what keeps that true through a checkout.
+*.jsonl text eol=lf

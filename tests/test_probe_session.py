@@ -16,7 +16,7 @@ from council.agents.mock import MockProvider
 from council.agents.provider import Provider, ProviderUnavailableError
 from council.config import Settings
 from council.probe.challenge import Condition
-from council.probe.session import PROBE_FILENAME, probe_model
+from council.probe.session import probe_model, probe_target
 from helpers_probe import CORPUS, SEED
 
 
@@ -55,7 +55,7 @@ async def test_a_run_probes_the_first_configured_model_and_writes_its_trials(
     )
 
     assert run.model == "first"
-    assert run.archive == tmp_path / PROBE_FILENAME
+    assert run.archive == probe_target(tmp_path, "first")
     assert len(run.trials) == len(CORPUS) * 2
     assert run.report.for_condition(Condition.PLACEBO) is not None
 

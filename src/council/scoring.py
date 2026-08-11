@@ -474,6 +474,18 @@ class ExperimentResults:
     only -- and this is the field a reader checks that caveat against.
     :func:`council.app.tables.coverage_note` reports the same gap on the dashboard.
 
+    Two things open that gap, and they are not the same kind of thing.
+    :attr:`contested_share` and :attr:`contested_points` above are measured over the
+    whole control arm and take no notice of either, so a run where they exceed this
+    is the ordinary case rather than a contradiction:
+
+    * the donor filter, above, which is a property of the design; and
+    * ``Settings.max_debate_points``, which is a budget. Where it is set, the debate
+      was run on an evenly spaced sample of the contested points rather than all of
+      them (:mod:`council.sampling`), and the difference between the two numbers is
+      mostly that. It costs the market-side comparison its power and leaves the
+      behavioural measurements alone, since each is computed per debated point.
+
     Counted off the arm's stored rows, the way ``app.tables._coverage_row`` counts
     it, rather than off the pairs the shift rate is computed from: those drop every
     pair containing a failed generation, so a conversation that was held and then
@@ -517,6 +529,36 @@ class ExperimentResults:
             if outcome.arm == str(arm):
                 return outcome
         raise KeyError(f"no outcome for arm {arm!r}")
+
+
+def _scoring_window(opens: pd.DataFrame, *, rows: Sequence[DecisionRow]) -> pd.DataFrame:
+    """The sessions from the first decision onward, and no earlier ones.
+
+    The same argument the ``covered`` filter above makes about tickers, one axis
+    over. A price file has to start before the study does, because the first
+    decision needs ``lookback_days`` of history behind it -- on the shipped
+    configuration that is 78 sessions of warm-up. Every arm is structurally flat
+    across them: no decision exists, so ``arms.targets_frame`` emits no row and the
+    engine holds nothing. ``buy_and_hold`` is not flat there. It is built from
+    whatever index it is handed and is fully invested from the second open.
+
+    Scored over the price file's whole range, the benchmark therefore banks a return
+    the committee was never given the chance to earn. On this study's data that is
+    not a rounding difference: the warm-up runs 2021-09-13 to 2021-12-31, over which
+    AAPL rose 18.9% and XOM 12.0%, and the benchmark reads **+67.2%** against
+    **+39.6%** over the window the arms could actually trade. The committee loses to
+    it either way -- that conclusion is unaffected -- but the published gap was
+    overstated by 27.6 percentage points, and an arm's Sharpe was computed over 78
+    sessions of forced zeros that belong to no arm's behaviour.
+
+    Trimming from the first decision date rather than from the first *filled* one
+    keeps the lookahead rule intact: a target on the opening session is filled at the
+    next open, which is the same one-session shift every arm and the benchmark obey.
+    """
+    if not rows:
+        return opens
+    first = min(row.decision_date for row in rows)
+    return opens.loc[opens.index >= pd.Timestamp(first)]
 
 
 def evaluate_experiment(
@@ -601,12 +643,11 @@ def evaluate_experiment(
     absent = [ticker for ticker in settings.tickers if ticker not in covered]
     if absent:
         _LOG.warning(
-            "no decision covers %s; scoring the basket over %s instead of the "
-            "configured universe",
+            "no decision covers %s; scoring the basket over %s instead of the configured universe",
             ", ".join(absent),
             ", ".join(covered),
         )
-    opens = opens_frame(prices, tickers=covered)
+    opens = _scoring_window(opens_frame(prices, tickers=covered), rows=rows)
     returns = forward_returns_lookup(forward_returns(opens))
     rule = RULES[rule_name]
 
@@ -657,9 +698,7 @@ def evaluate_experiment(
         influence=reports.influence,
         windows=reports.windows,
         contested_share=contested_share(control, threshold=settings.dispersion_threshold),
-        contested_points=len(
-            contested_points(control, threshold=settings.dispersion_threshold)
-        ),
+        contested_points=len(contested_points(control, threshold=settings.dispersion_threshold)),
         decision_count=len(decisions),
         calendar_start=opens.index[0].date(),
         calendar_end=opens.index[-1].date(),
@@ -760,9 +799,7 @@ def _arm_reports(
         # The same bar the shift table above was built with. Left to default, the
         # matrix would resolve its own from the process-wide settings, and one
         # results object would carry two definitions of a concession.
-        influence[name] = influence_matrix(
-            frame, arm=name, min_concession=settings.shift_threshold
-        )
+        influence[name] = influence_matrix(frame, arm=name, min_concession=settings.shift_threshold)
         windows[name] = compare_windows(
             outcome.net_return, control_return, window_count=used_windows
         )
@@ -776,4 +813,3 @@ def _arm_reports(
         short_committee_points=short_committee_points,
         unpaired=unpaired,
     )
-

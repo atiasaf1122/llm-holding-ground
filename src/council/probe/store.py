@@ -52,15 +52,21 @@ def turn_row(turn: ProbeTurn) -> dict[str, Any]:
     }
 
 
-def trial_row(trial: ProbeTrial) -> dict[str, Any]:
+def trial_row(trial: ProbeTrial, *, model: str | None = None) -> dict[str, Any]:
     """One item put to one model, before and after being contradicted.
 
     ``final`` is null where the second turn was never asked, which is not the same
     row as a second turn that failed -- the distinction
     :class:`~council.probe.runner.ProbeTrial` keeps, kept here too.
+
+    ``model`` is stamped on every row because its absence cost a run: four probe
+    sweeps wrote to one default path, the survivor carried no model column, and the
+    published table's rows became unattributable to any artefact (``CLAIMS.md``
+    D13). A filename convention alone cannot carry provenance a file copy loses.
     """
     challenge = trial.challenge
     return {
+        "model": model,
         "item": trial.item.identifier,
         "difficulty": str(trial.item.difficulty),
         "condition": str(trial.condition),
@@ -71,7 +77,7 @@ def trial_row(trial: ProbeTrial) -> dict[str, Any]:
     }
 
 
-def write_trials(trials: Sequence[ProbeTrial], target: Path) -> Path:
+def write_trials(trials: Sequence[ProbeTrial], target: Path, *, model: str | None = None) -> Path:
     """Write the run as JSON lines and return where it went.
 
     Sorted keys and an explicit newline, matching the completions archive, so two
@@ -80,6 +86,8 @@ def write_trials(trials: Sequence[ProbeTrial], target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8", newline="\n") as handle:
         for trial in trials:
-            handle.write(json.dumps(trial_row(trial), sort_keys=True, ensure_ascii=False))
+            handle.write(
+                json.dumps(trial_row(trial, model=model), sort_keys=True, ensure_ascii=False)
+            )
             handle.write("\n")
     return target

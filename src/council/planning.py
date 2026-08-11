@@ -56,8 +56,9 @@ a parameter of every function that uses it and a flag on the command line.
 ASSUMED_CONTESTED_SHARE: Final = 1.0
 """Share of decision points assumed contested when nothing has been generated yet.
 
-Every contested share this design has measured is at or near 100% -- see
-``docs/findings.md`` section 2 and ``docs/CLAIMS.md`` C14 -- because the crossed
+Every contested share this design has measured is at or near 100% -- 984 of 1,002 on
+the two-year real-price run, see ``docs/findings.md`` section 7 and ``docs/CLAIMS.md``
+C14 -- because the crossed
 personas split on direction at nearly every point. Assuming every decision point is
 contested is therefore the value that actually overstates the debate arms, which is
 what this constant is for: a first plan should tempt nobody into a night that turns
@@ -70,7 +71,8 @@ so. :func:`council.pipeline.select_contested` measures dispersion once over the 
 independent arm -- every model crossed with every persona -- and
 :func:`council.debate.sweep.run_debate_arms` applies that one list unchanged to every
 committee, so the plan and the sweep both spend at the pooled share. Per committee the
-same run gives 449 of 1,120, 40% (``docs/CLAIMS.md`` C14). That is the figure a
+same run gives 4,728 of 8,016, 59% -- ranging from 19.0% for a uniform committee to
+98.5% for a rotation (``docs/CLAIMS.md`` C14). That is the figure a
 per-committee gate would spend at, and no such gate exists; assuming the pooled share
 therefore still overstates rather than understates what this code will run.
 """

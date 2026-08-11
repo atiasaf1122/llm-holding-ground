@@ -61,8 +61,10 @@ class Settings(BaseSettings):
     # Debate only happens where there is something to debate. On days the agents
     # already agree, a conversation cannot change the committee's decision and
     # teaches nothing -- what skipping them saves has never been measured at the
-    # committee level; on the pooled grid the contested share was 100%,
-    # so it saved nothing.
+    # committee level; on the pooled grid the contested share was 98.2%,
+    # so it saved almost nothing. Per committee the same run gives 59.0%, ranging
+    # from 19.0% to 98.5% (docs/CLAIMS.md C14), which is the unit the sentence above
+    # justifies the gate in and the unit it is not applied at.
     dispersion_threshold: float = Field(default=0.25, ge=0.0)
 
     # -- when a conversation ends ---------------------------------------------
@@ -148,6 +150,23 @@ class Settings(BaseSettings):
     # arguments about nearly the same data. At or above `lookback_days` the two
     # windows cannot overlap at all.
     placebo_min_gap_sessions: int = Field(default=60, ge=0)
+
+    # How many contested points the debate arms are run on. `None` is all of them,
+    # which over the configured two years prices at roughly 690,000 inferences --
+    # about seventy-two hours, and that is the upper bound assuming no conversation
+    # ever stops early.
+    #
+    # A budget, and therefore not pre-registered either: it was chosen after the
+    # control arm had run, from its measured contested share. It buys precision back
+    # from wall-clock and nothing else -- `sampling.thin_contested` spreads the pick
+    # evenly over each ticker's calendar, so the sample spans the same two years at
+    # lower density rather than a shorter period at full density. Which regimes are
+    # in the study is a design question; how many points inside them is a budget.
+    #
+    # It dilutes the market-side comparison and leaves the behavioural one intact.
+    # See `sampling` for why, and for why it does not confound the arms against each
+    # other.
+    max_debate_points: int | None = Field(default=None, ge=1)
 
     # -- generation -----------------------------------------------------------
 

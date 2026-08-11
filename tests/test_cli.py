@@ -100,7 +100,7 @@ def test_plan_reports_a_measured_share_once_the_control_arm_exists(tmp_path: Pat
 
     _, printed = run("plan", data_dir=tmp_path)
 
-    assert "contested (measured)" in printed
+    assert "to debate (measured)" in printed
     assert "* estimated" not in printed
 
 
@@ -340,7 +340,12 @@ def test_probe_scores_the_corpus_and_leaves_its_trials_on_disk(tmp_path: Path) -
     assert code == EXIT_OK
     assert "capitulation probe on" in printed
     assert "prior confidence" in printed
-    assert (tmp_path / "probe.jsonl").is_file()
+    # The default target is per-model now -- the shared default is how four runs
+    # overwrote one file (CLAIMS D13). The command runs with `--models alpha beta`,
+    # so the probed model is the first of those.
+    from council.probe.session import probe_target
+
+    assert probe_target(tmp_path, MODELS[0]).is_file()
 
 
 def test_probe_archives_one_readable_row_per_trial(tmp_path: Path) -> None:

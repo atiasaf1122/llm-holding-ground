@@ -46,7 +46,8 @@ rather than owing four more. See
 **Contested points only.** On a day the agents already agree, a conversation
 cannot change the committee's decision -- what skipping those days saves has never
 been measured at the committee level; on the pooled grid the contested share was
-100%, so it saved nothing. :func:`run_debate` refuses an uncontested point rather
+98.2%, so it saved almost nothing. Per committee the same run gives 59.0%.
+:func:`run_debate` refuses an uncontested point rather
 than trusting its caller to have filtered.
 
 Nothing here renders a prompt or writes a stored row. A seat's turn is taken

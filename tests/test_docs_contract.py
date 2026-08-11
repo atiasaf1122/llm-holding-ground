@@ -204,16 +204,14 @@ def _agreement_spread_shares() -> dict[str, float | int]:
         ):
             held.setdefault((str(composition), day, str(ticker)), []).append(float(exposure))
         spreads = [max(seats) - min(seats) for seats in held.values() if len(seats) > 1]
-        shares[f"meets_{round_index}"] = (
-            sum(1 for spread in spreads if within(spread, 0.20)) / len(spreads)
+        shares[f"meets_{round_index}"] = sum(1 for spread in spreads if within(spread, 0.20)) / len(
+            spreads
         )
         if round_index == 0:
             shares["meets_half"] = sum(1 for s in spreads if within(s, 0.50)) / len(spreads)
             shares["bare"] = sum(1 for s in spreads if s <= 0.20) / len(spreads)
             shares["on_bar"] = sum(1 for s in spreads if abs(s - 0.20) < 1e-6)
-            shares["on_bar_bare"] = sum(
-                1 for s in spreads if abs(s - 0.20) < 1e-6 and s <= 0.20
-            )
+            shares["on_bar_bare"] = sum(1 for s in spreads if abs(s - 0.20) < 1e-6 and s <= 0.20)
     return shares
 
 
@@ -309,9 +307,7 @@ def test_the_dashboard_does_not_name_a_finding_the_declaration_omits() -> None:
     # that every debate-minus-placebo number this project has produced came from a
     # placebo arm that was not inert.
     panel = " ".join(
-        (PROJECT_ROOT / "src" / "council" / "app" / "panels.py")
-        .read_text(encoding="utf-8")
-        .split()
+        (PROJECT_ROOT / "src" / "council" / "app" / "panels.py").read_text(encoding="utf-8").split()
     )
     declared = flowed(text(README).split("**Primary statistic.**")[1].split("**Secondary")[0])
 
@@ -355,15 +351,18 @@ def test_research_does_not_illustrate_a_bar_the_tool_cannot_print() -> None:
 # -- the prices are synthetic, and the front door says so -------------------------
 
 
-def test_the_readme_says_the_reported_runs_used_synthetic_prices() -> None:
-    # The README describes a real-market study end to end -- a ticker-selection rule
-    # by market capitalisation, "one asset class, one market, one path" -- and never
-    # said that every reported run was a geometric random walk.
-    body = text(README)
+def test_the_readme_says_what_the_reported_run_actually_traded() -> None:
+    # The inverse of the defect this replaces. The README once described a
+    # real-market study end to end while every reported run was a geometric random
+    # walk; the prices are real now, so the obligation flips -- a reader has to be
+    # told they are *adjusted*, because an adjusted open is not a price anyone could
+    # have filled at, and told that recognition is live rather than hypothetical.
+    body = " ".join(text(README).split())
 
-    assert "synthetic_prices" in body
-    assert "geometric random walks" in body
-    assert "this repository fetches no" in body
+    assert "geometric random walks" not in body, "no reported run is synthetic now"
+    assert "back-adjusted" in body or "auto_adjust" in body
+    assert "wrong one for claiming any fill was achievable" in body
+    assert "Recognition is a live risk" in body
 
 
 def test_the_limitations_name_the_half_of_the_question_nothing_measures() -> None:
@@ -392,11 +391,17 @@ def test_the_limitations_name_the_half_of_the_question_nothing_measures() -> Non
     assert "answered nowhere" in limitations
 
 
-def test_the_hindsight_limitations_are_qualified_to_a_run_with_real_history() -> None:
+def test_the_hindsight_limitation_is_no_longer_qualified_away() -> None:
+    # It used to carry "this applies only to a run supplied with real history", which
+    # was true while every run was synthetic and is the sentence a reader would take
+    # as the limitation not applying. The run is real; the qualification has to go
+    # rather than be left standing as cover.
     limitations = text(README).split("## Limitations")[1]
-    hindsight = limitations.split("**Ticker selection carries hindsight.**")[1]
+    hindsight = " ".join(limitations.split("**Ticker selection carries hindsight.**")[1].split())
 
-    assert "real history" in hindsight
+    assert "applies only to a run supplied with real history" not in hindsight
+    assert "carries no hindsight" not in hindsight
+    assert "not\n  removed" in limitations or "but not removed" in hindsight
 
 
 # -- what the placebo actually varies ---------------------------------------------
@@ -422,9 +427,7 @@ def test_the_placebo_pool_docstring_names_the_arm_the_sweep_actually_draws_from(
     placebo = (PROJECT_ROOT / "src" / "council" / "debate" / "placebo.py").read_text(
         encoding="utf-8"
     )
-    sweep = (PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py").read_text(
-        encoding="utf-8"
-    )
+    sweep = (PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py").read_text(encoding="utf-8")
 
     assert "Assembled by the caller from a debate arm" not in placebo
     assert "from the **independent** arm" in placebo
@@ -437,9 +440,7 @@ def test_the_anonymity_claim_is_qualified_to_the_handle_the_code_enforces() -> N
     # only transform anywhere is `prompt._flatten`'s whitespace collapse and
     # truncation. No anonymisation audit of the completions archive exists, although
     # `store.py` and `config.py` both justify keeping the archive by one.
-    source = (PROJECT_ROOT / "src" / "council" / "debate" / "peers.py").read_text(
-        encoding="utf-8"
-    )
+    source = (PROJECT_ROOT / "src" / "council" / "debate" / "peers.py").read_text(encoding="utf-8")
     peers = " ".join(source.split())
     c5 = " ".join(text(CLAIMS).split("C5.")[1].split("C6.")[0].split())
 
@@ -454,10 +455,12 @@ def test_the_anonymity_claim_is_qualified_to_the_handle_the_code_enforces() -> N
 
 @pytest.mark.parametrize("document", [README, RESEARCH])
 def test_the_arms_table_says_the_placebo_may_change_the_instrument(document: Path) -> None:
+    # Post-D14 the disclosure carries the measured rate rather than "possibly": the
+    # donor is the other instrument 49% of the time on the published run.
     body = text(document)
 
-    assert "(and possibly another instrument)" in body
-    assert "instrument identity" in body
+    assert "49%" in body
+    assert "instrument identity" in body or "other instrument" in body
 
 
 # -- the coverage figures are in one unit -----------------------------------------
@@ -482,9 +485,12 @@ def test_the_coverage_note_reports_dates_and_points_in_their_own_units(
     body = " ".join(text(document).split())
 
     assert "60 of 461 decision dates" not in body
-    assert "60 of 461 dates (120 of 922 points)" in body
     assert "59 of 69 dates (118 of 138 contested points)" not in body
-    assert "60 of 70 dates (120 of 140 contested points)" in body
+    # Both documents now quote the published run's own cost -- 10 of the 60 sampled
+    # points -- rather than the planning-range projection, which described a range
+    # no run ever used.
+    assert "10 of the 60 sampled points" in body
+    assert "60 of 461 dates (120 of 922 points)" not in body
 
 
 def _six_month_donor_loss() -> tuple[int, int, int, int]:
@@ -531,6 +537,10 @@ def test_the_six_month_coverage_pair_is_the_one_the_shipped_pre_flight_measures(
     # and 138 are the stored placebo arm's coverage rather than the slice's
     # calendar. The slice holds 70 decision dates and 140 contested points, and the
     # arms it is differenced against keep every one of them.
+    if document == README:
+        pytest.skip("the README quotes the published run's measured cost instead")
+    # research.md keeps the six-month figure as labelled provenance for why the gap
+    # is a first-class setting; this recomputes it through the shipped pre-flight.
     dates, points, lost_dates, lost_points = _six_month_donor_loss()
     body = " ".join(text(document).split())
 
@@ -540,9 +550,7 @@ def test_the_six_month_coverage_pair_is_the_one_the_shipped_pre_flight_measures(
 
 
 def test_the_pre_flight_docstring_uses_the_same_units_as_the_documents() -> None:
-    sweep = (PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py").read_text(
-        encoding="utf-8"
-    )
+    sweep = (PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py").read_text(encoding="utf-8")
     has_donor = sweep.split("def has_donor")[1].split("@dataclass")[0]
 
     assert "118 of 138 points" not in has_donor
@@ -561,20 +569,20 @@ def test_the_pre_flight_docstring_uses_the_same_units_as_the_documents() -> None
     assert "118 of the 138 points a gapless pre-flight admits" in " ".join(has_donor.split())
 
 
-def test_the_falling_range_in_findings_is_the_one_its_own_table_shows() -> None:
-    # The paragraph opens "all four models" and then gives the falling range as
-    # "0.03 to 0.30", dropping phi4's -0.20 and -0.15 -- the one model the section
-    # exists to report, in the direction that makes the screen look tidier. CLAIMS
-    # C13 has the correct range.
-    section = text(FINDINGS).split("### What the corrected check actually found")[1]
-    paragraph = " ".join(section.split("\n\n")[1].split())
-    c13 = " ".join(text(CLAIMS).split("C13.")[1].split("C14.")[0].split())
+def test_a_per_model_result_shows_every_model_including_the_awkward_one() -> None:
+    # The lesson this replaces: a paragraph opened "all four models" and then gave a
+    # range that quietly dropped phi4, the one model whose numbers ran the other way.
+    # The headline is a per-model claim now, so the same temptation is live, and the
+    # table under it is what makes cherry-picking impossible.
+    body = " ".join(text(FINDINGS).split("### It survives being tested properly")[1].split())
+    c8 = " ".join(text(CLAIMS).split("C8.")[1].split("C9.")[0].split())
 
-    assert "-0.20 to +0.30" in c13
-    assert "roughly 0.03 to 0.30" not in paragraph
-    assert "between -0.20 and +0.30" in paragraph
-    assert "runs backwards for phi4" in paragraph
-    assert "forty times more in the extreme case" not in paragraph
+    for model in ("gemma4:12b", "granite4.1:8b", "phi4:14b", "qwen3.5:9b"):
+        assert model in body, model
+        assert model in c8, model
+    # granite4.1 shifts nearly half the time against gemma4's fifth. Reporting the
+    # pooled mean alone would hide a 2.4x spread between models.
+    assert "48.8%" in body and "20.2%" in body
 
 
 def test_the_readme_does_not_claim_a_decision_on_every_session_the_prices_hold() -> None:
@@ -600,9 +608,7 @@ def test_no_document_names_a_frequency_arm_the_code_does_not_have() -> None:
         assert "two-year daily arm" not in body, document.name
         assert "two-year run at daily decision frequency" in body, document.name
 
-    assert "only decision frequency this repository implements" in " ".join(
-        text(README).split()
-    )
+    assert "only decision frequency this repository implements" in " ".join(text(README).split())
 
 
 # -- what the rationale-only arm actually withholds -------------------------------
@@ -622,9 +628,7 @@ def test_the_rationale_only_arm_is_not_described_as_removing_numbers(document: P
 def test_the_only_numeric_redaction_in_the_prompt_module_is_the_exposure_field() -> None:
     # The claim above is about the code, so it is checked there too: if a numeric
     # redaction is ever added, this fails and the documents can be relaxed.
-    prompt = (PROJECT_ROOT / "src" / "council" / "agents" / "prompt.py").read_text(
-        encoding="utf-8"
-    )
+    prompt = (PROJECT_ROOT / "src" / "council" / "agents" / "prompt.py").read_text(encoding="utf-8")
     peer_renderer = prompt.split("def _render_peer")[1].split("def _flatten")[0]
 
     assert "show_exposure" in peer_renderer
@@ -703,14 +707,17 @@ def test_no_file_claims_the_dispersion_gate_saves_the_budget(path: Path) -> None
     body = " ".join(text(path).split())
 
     assert "is most of the compute budget" not in body, path.name
-    assert "so it saved nothing" in body, path.name
+    # "almost nothing" rather than "nothing" since the two-year run measured 98.2%
+    # and not 100%: 18 points of 1,002 are genuinely skipped. The admission is what
+    # this guards, not the adverb.
+    assert "so it saved almost nothing" in body, path.name
 
 
 def test_the_readme_does_not_claim_the_dispersion_gate_saves_the_budget() -> None:
     body = text(README)
 
     assert "also most of the compute budget" not in body
-    assert "so it saved nothing" in body
+    assert "so it saved almost nothing" in body
 
 
 # -- the compute arithmetic -------------------------------------------------------
@@ -761,29 +768,28 @@ def test_the_full_grid_estimate_counts_every_arm_the_sweep_runs() -> None:
 # -- superseded numbers are marked as superseded ----------------------------------
 
 
-@pytest.mark.parametrize(
-    "heading", ["## 3. Cost, planned and measured", "## 5. The main experiment"]
-)
-def test_a_section_built_on_deleted_artefacts_says_so_under_its_heading(heading: str) -> None:
-    # Withdrawing Findings 2-4 for the threshold defect left the section's own
-    # figures -- 14,496 decisions, 3,344 debates, the whole shift table -- standing
-    # as current results of a run whose artefacts are gone and whose window was
-    # never chosen.
-    section = text(FINDINGS).split(heading)[1].split("\n## ")[0]
-    preamble = section.split("\n### ")[0]
+def test_the_write_up_names_the_artefact_every_section_is_read_off() -> None:
+    # What the superseded-section guard was protecting: a reader met figures with no
+    # way to tell which run produced them, so when a section's artefacts were retired
+    # the numbers stayed on the page reading as current. Naming the file under the
+    # heading is what makes that checkable, and `test_docs_findings.py` recomputes the
+    # published table from exactly this path.
+    preamble = " ".join(text(FINDINGS).split("\n## ")[0].split())
 
-    assert "Superseded in full" in preamble
-    # "deleted" was the word, and it is false of a file that is on disk and cited
-    # three lines further down as the source of the recomputed table.
-    assert "superseded" in preamble.lower()
-    assert "six-month" in preamble
+    assert "docs/results/run-4models-2y/decisions.parquet" in preamble
+    assert "zero generation failures" in preamble
+    assert (PROJECT_ROOT / "docs" / "results" / "run-4models-2y" / "decisions.parquet").exists()
 
 
-def test_the_claims_register_marks_the_measurement_claims_as_retained_for_the_record() -> None:
+def test_the_claims_register_says_what_became_of_the_measurements_it_replaced() -> None:
+    # Replacing a withdrawn claim with a supported one at the same number is how a
+    # register loses its history: the withdrawal vanishes and nothing records that the
+    # number was ever in doubt.
     measurements = text(CLAIMS).split("## About the measurements")[1].split("C8.")[0]
 
-    assert "superseded" in measurements
+    assert "superseded" in measurements.lower()
     assert "C8-C15" in measurements
+    assert "docs/results/superseded/" in measurements
 
 
 def test_no_document_calls_the_surviving_artefacts_deleted() -> None:
@@ -843,7 +849,7 @@ def test_no_document_cites_an_artefact_path_that_does_not_exist(document: Path) 
 
 # -- the contested gate is measured on the pooled grid ----------------------------
 
-POOLED_COMMITTEE_SHARE = "449 of 1,120"
+POOLED_COMMITTEE_SHARE = "4,728 of 8,016"
 """The contested share recomputed per committee on
 ``docs/results/superseded/run-2models/decisions.parquet`` at the shipped
 ``dispersion_threshold``: rotations 56, 125, 70 and 123 of 140, uniforms 3, 11, 30 and
@@ -936,8 +942,9 @@ def test_the_third_amendment_the_declaration_made_is_disclosed_with_the_other_tw
 def test_the_opening_italic_no_longer_presents_the_amended_text_as_declared() -> None:
     header = text(README).split("## Pre-registered primary comparison")[1].split(">")[0]
 
-    assert "The primary comparison and the two thresholds it is stated in were declared" \
-        not in header
+    assert (
+        "The primary comparison and the two thresholds it is stated in were declared" not in header
+    )
     assert "amended" in header
 
 
@@ -1039,11 +1046,18 @@ def test_the_status_list_does_not_leave_finished_work_unchecked() -> None:
     assert "- [x] Dashboard and the results write-up" in status
 
 
-def test_the_status_list_says_both_completed_runs_are_superseded() -> None:
+def test_the_status_list_names_the_current_run_and_still_retires_the_old_ones() -> None:
+    # A status line saying a run exists, without saying which artefacts it produced,
+    # is how the four-model run came to be cited in two documents with nothing on
+    # disk to check it against.
     status = flowed(text(README).split("## Status")[1])
+    current = PROJECT_ROOT / "docs" / "results" / "run-4models-2y"
 
+    assert "docs/results/run-4models-2y/" in status
     assert "docs/results/superseded/" in status
-    assert "There is no current run." in status
+    assert "superseded" in status
+    assert "There is no current run." not in status
+    assert {path.name for path in current.iterdir()} >= {"decisions.parquet", "results.json"}
 
 
 def test_the_status_list_does_not_promise_artefacts_for_the_four_model_run() -> None:
@@ -1055,7 +1069,15 @@ def test_the_status_list_does_not_promise_artefacts_for_the_four_model_run() -> 
     kept = PROJECT_ROOT / "docs" / "results" / "superseded"
     superseded = {path.name for path in kept.iterdir()}
 
-    assert superseded == {"results-2models-6months.json", "run-2models"}, superseded
+    assert superseded == {
+        "results-2models-6months.json",
+        "run-2models",
+        # The two-model era's probe artefacts, moved here in audit round 4: they sat
+        # unreferenced beside the current run's directory, and the gemma4 file
+        # contradicts the published (unrecomputable, D13) gemma4 probe row.
+        "probe-gemma4.jsonl",
+        "probe-qwen3-8b.jsonl",
+    }, superseded
     assert "Their artefacts are under" not in status
     assert "two-model run's artefacts are under" in status
     assert "four-model run's" in status

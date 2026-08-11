@@ -82,7 +82,10 @@ def _rounds_in(arm: str | None) -> list[int]:
 
 
 def _round_label(round_index: int) -> str:
-    return "0 - opening view" if round_index == OPENING_ROUND else "1 - after the debate"
+    # "first rebuttal", not "after the debate": conversations run to ~6 rounds and
+    # the arm ordering reverses between round 1 and the endpoint (CLAIMS C28), so a
+    # label calling round 1 the debate's end would misread the study on the chart.
+    return "0 - opening view" if round_index == OPENING_ROUND else "1 - first rebuttal"
 
 
 # -- 2. equity curves --------------------------------------------------------
@@ -171,8 +174,11 @@ def shift_panel(results: Results, settings: Settings, *, composition: str | None
     st.caption(
         "Reading the debate arm against the placebo is exploratory, not declared: "
         "the declaration states a per-arm rate and registers no contrast and no "
-        "direction. The placebo shows how "
-        "much movement contradiction alone buys -- read it against the coverage "
+        "direction. The placebo shows movement in response to peers whose prose is "
+        "about another day -- and, half the time, the other instrument -- so it bounds "
+        "what the argument's content contributes; it does not isolate contradiction "
+        "(CLAIMS D8, D14). These are first-rebuttal rates: over whole conversations "
+        "the arm ordering reverses (CLAIMS C28). Read it against the coverage "
         "table below, which says whether the two arms answered the same points."
     )
     _population_caption(composition)
@@ -204,8 +210,7 @@ def shift_panel(results: Results, settings: Settings, *, composition: str | None
         "answered once per seat of every committee, so the observations are "
         "repeated rather than independent, and `points` is what says by how much. "
         + " ".join(
-            f"{entry.arm}: {len(entry.records)} observations from {entry.points} "
-            f"decision points."
+            f"{entry.arm}: {len(entry.records)} observations from {entry.points} decision points."
             for entry in reports.values()
             if entry.records
         )
@@ -337,7 +342,9 @@ def transcript_panel(results: Results, *, composition: str | None) -> None:
     st.header("Read one debate")
     st.caption(
         "Every panel above is a rate. This is the evidence under them: the point "
-        "where the agents opened furthest apart, and what each said before and after."
+        "where the agents opened furthest apart, and what each said at its opening "
+        "view and its first rebuttal. A conversation runs up to six rounds; this "
+        "shows the first exchange, which is what the primary statistic measures."
     )
     _population_caption(composition)
     transcripts = read_transcripts(results.decisions)
@@ -398,9 +405,9 @@ def _seat_row(seat: SeatUtterance) -> None:
         f"confidence `{shift.prior_confidence:.2f}`"
     )
     opening.write(seat.opening_rationale or "_no rationale stored_")
-    verdict = "changed its mind" if shift.changed_mind else "held its ground"
+    verdict = "moved at the bar" if shift.changed_mind else "held at the bar"
     final.markdown(
-        f"**final** exposure `{shift.posterior_exposure:+.2f}` "
+        f"**first rebuttal** exposure `{shift.posterior_exposure:+.2f}` "
         f"confidence `{shift.posterior_confidence:.2f}` -- {verdict}"
     )
     final.write(seat.final_rationale or "_no rationale stored_")

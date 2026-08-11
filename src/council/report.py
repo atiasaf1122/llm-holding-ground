@@ -148,11 +148,20 @@ def _plan_notes(plan: ExperimentPlan) -> list[str]:
     contested share and one extrapolated from an assumption are different kinds of
     number, and somebody deciding whether to start tonight is entitled to know
     which they are looking at.
+
+    "to debate" rather than "contested", which is what this line used to say and
+    was not. :attr:`ExperimentPlan.contested_points` is what the sweep will actually
+    hold -- contested, *then* narrowed by
+    :func:`council.debate.sweep.servable_points` to the points a placebo donor
+    exists for, and by ``Settings.max_debate_points`` to the sampled budget. On the
+    two-year real-price run those narrowings take it from 984 to 860, and a reader
+    comparing this line against ``evaluate``'s contested count would otherwise find
+    two different numbers for what the same word named.
     """
     measured = "assumed" if plan.contested_estimated else "measured"
     notes = [
         f"{format_count(plan.decision_points)} decision points, "
-        f"{format_count(plan.contested_points)} contested ({measured}).",
+        f"{format_count(plan.contested_points)} to debate ({measured}).",
         f"Wall clock assumes {plan.seconds_per_inference:.2f}s per inference at each "
         "stage's own concurrency.",
     ]

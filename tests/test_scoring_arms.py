@@ -37,6 +37,7 @@ from council.pipeline import open_store, stored_decisions
 from council.report import render_results, results_as_json
 from council.scoring import (
     ExperimentResults,
+    _scoring_window,
     arm_exposures,
     committee_exposures,
     evaluate_experiment,
@@ -247,15 +248,9 @@ def test_a_seat_short_committee_drops_out_of_the_pooled_average_too() -> None:
     # absent model makes all eight short at once -- and `arm_exposures` pooled them
     # and returned the same value as a complete design, saying nothing.
     design = balanced_design(models=FOUR_MODELS)
-    complete = [
-        row
-        for committee in design
-        for row in seated_rows(committee, exposure=1.0)
-    ]
+    complete = [row for committee in design for row in seated_rows(committee, exposure=1.0)]
     partial = [
-        row
-        for committee in design
-        for row in seated_rows(committee, exposure=1.0, omit="m4")
+        row for committee in design for row in seated_rows(committee, exposure=1.0, omit="m4")
     ]
 
     assert arm_exposures(complete, compositions=design, arm=Arm.INDEPENDENT, rule=mean)[0]
@@ -334,9 +329,9 @@ def test_one_lost_pair_is_counted_once_not_once_per_mechanism(
         )
 
     assert short == 1
-    assert not [
-        record for record in caplog.records if "absent from the" in record.message
-    ], [record.message for record in caplog.records]
+    assert not [record for record in caplog.records if "absent from the" in record.message], [
+        record.message for record in caplog.records
+    ]
     assert any("short of the committee" in record.message for record in caplog.records)
 
 
@@ -533,8 +528,18 @@ def test_a_ticker_no_decision_covers_is_not_padded_into_the_basket(
 
     results = evaluate_experiment(settings=settings, prices=prices, decisions=covered)
 
-    narrowed = evaluate(buy_and_hold(opens_frame(prices, tickers=[TICKERS[0]])))
-    configured = evaluate(buy_and_hold(opens_frame(prices, tickers=list(settings.tickers))))
+    # Both expectations are built over the same scoring window the command uses, so
+    # this asserts the *ticker* narrowing and not, accidentally, the calendar one
+    # that `_scoring_window` applies to every arm and the benchmark alike.
+    rows = frame_to_rows(covered)
+    narrowed = evaluate(
+        buy_and_hold(_scoring_window(opens_frame(prices, tickers=[TICKERS[0]]), rows=rows))
+    )
+    configured = evaluate(
+        buy_and_hold(
+            _scoring_window(opens_frame(prices, tickers=list(settings.tickers)), rows=rows)
+        )
+    )
     assert results.buy_and_hold.total_return == pytest.approx(narrowed.total_return)
     assert results.buy_and_hold.total_return != pytest.approx(configured.total_return)
     # And the arms themselves: scoring the same frame under a configuration whose
@@ -615,9 +620,7 @@ def test_a_run_whose_every_arm_was_matched_says_nothing_about_absent_nulls(
     results = evaluate_experiment(settings=settings, prices=prices, decisions=decisions)
     everything_matched = replace(
         results,
-        arms=tuple(
-            replace(outcome, baseline=results.buy_and_hold) for outcome in results.arms
-        ),
+        arms=tuple(replace(outcome, baseline=results.buy_and_hold) for outcome in results.arms),
     )
 
     assert "No turnover-matched random baseline" not in render_results(everything_matched)
@@ -701,9 +704,7 @@ def test_a_reduced_window_count_is_logged_rather_than_applied_in_silence(
         )
 
     assert any("window(s) requested" in record.message for record in caplog.records)
-    assert all(
-        comparison.window_count < 10_000 for comparison in results.windows.values()
-    )
+    assert all(comparison.window_count < 10_000 for comparison in results.windows.values())
 
 
 # -- a short committee point is scored as the control, and now says so -------------
@@ -775,9 +776,7 @@ def test_a_short_committee_point_falls_back_to_the_control_and_is_counted() -> N
     control, control_short = arm_exposures(
         rows, compositions=[TWO_SEAT], arm=Arm.INDEPENDENT, rule=mean
     )
-    treated, treated_short = arm_exposures(
-        rows, compositions=[TWO_SEAT], arm=Arm.DEBATE, rule=mean
-    )
+    treated, treated_short = arm_exposures(rows, compositions=[TWO_SEAT], arm=Arm.DEBATE, rule=mean)
 
     assert treated[(D2, "AAA")] == control[(D2, "AAA")] == 0.0
     assert treated_short == 1
@@ -1033,3 +1032,57 @@ def test_the_post_debate_calibration_excludes_an_abandoned_conversations_opening
 
     assert final["composition"].tolist() == ["A"]
     assert final["round_index"].tolist() == [2]
+
+
+# -- the window every arm and the benchmark are scored over ------------------------
+
+
+def test_the_benchmark_is_not_scored_over_sessions_no_arm_could_trade() -> None:
+    """The warm-up belongs to the price file, not to the study.
+
+    A price file starts before the study does, because the first decision needs a
+    trailing window behind it. Every arm is flat across that warm-up -- no decision
+    exists, so nothing is held. `buy_and_hold` is not: handed the whole index it is
+    invested from the second open, and banks a return the committee was never given
+    the chance to earn. On the shipped configuration the warm-up is 78 sessions over
+    which both instruments rose, and the published benchmark read +67.2% against
+    +39.6% over the window the arms could trade.
+
+    Asserted against the benchmark computed on the trimmed index rather than against
+    a stored number, so the test states the property and not one run's arithmetic.
+    """
+    prices = make_prices()
+    opens = opens_frame(prices, tickers=list(TICKERS))
+    # Decisions start a third of the way in; everything before is warm-up.
+    first = opens.index[len(opens) // 3].date()
+    rows = frame_to_rows(
+        frame_of(
+            *(
+                decision_row(
+                    on=day.date(),
+                    ticker=ticker,
+                    model="m1",
+                    persona=PERSONAS[0].name,
+                    arm=str(Arm.INDEPENDENT),
+                    exposure=0.0,
+                )
+                for day in opens.index[len(opens) // 3 :]
+                for ticker in TICKERS
+            )
+        )
+    )
+
+    window = _scoring_window(opens, rows=rows)
+
+    assert window.index[0].date() == first
+    assert len(window) < len(opens)
+    assert evaluate(buy_and_hold(window)).total_return != pytest.approx(
+        evaluate(buy_and_hold(opens)).total_return
+    )
+
+
+def test_a_run_with_no_rows_keeps_the_whole_calendar() -> None:
+    """Nothing to trim to. The refusals above are what catch an empty run."""
+    opens = opens_frame(make_prices(), tickers=list(TICKERS))
+
+    assert _scoring_window(opens, rows=()).equals(opens)

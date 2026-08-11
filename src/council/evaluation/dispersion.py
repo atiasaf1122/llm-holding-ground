@@ -2,7 +2,8 @@
 
 This runs *before* generation, not after. It decides which days are worth debating
 -- what skipping them saves has never been measured at the committee level; on the
-pooled grid the contested share was 100%, so it saved nothing. It is also the
+pooled grid the contested share was 98.2%, so it saved almost nothing, and per
+committee the same run gives 59.0%. It is also the
 experiment's first checkpoint. If the agents barely disagree anywhere, there is
 nothing for a debate to change and the headline question has no data behind it.
 Better to learn that from the independent arm in an afternoon than from a finished

@@ -289,7 +289,7 @@ def test_the_control_is_offered_one_round_and_a_debate_arm_two(full_run: Path) -
 
     assert selector(app, "calibration_round").options == [
         "0 - opening view",
-        "1 - after the debate",
+        "1 - first rebuttal",
     ]
 
 
