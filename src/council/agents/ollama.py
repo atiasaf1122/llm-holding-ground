@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,7 @@ import httpx
 from council.agents.provider import (
     Completion,
     ContextOverflowError,
+    InterruptedEnvelopeError,
     MalformedOutputError,
     MissingModelError,
     PreflightError,
@@ -36,7 +38,16 @@ The output is then unconstrained prose that happens to parse sometimes, which
 presents as a weak model rather than as a bug -- and would be read as a result.
 """
 
+_LOG = logging.getLogger(__name__)
+
 BACKOFF_BASE_SECONDS = 1.0
+
+ENVELOPE_RETRIES = 3
+"""How many times `generate` re-sends a request whose response the daemon never
+finished. Distinct from `_request`'s transport retries: the HTTP exchange here
+*succeeded*, so the transport loop is already spent by the time the envelope is
+parsed. Three at exponential backoff spans ~7 seconds, which covers the observed
+failure -- the auto-updater's restart -- with margin."""
 """Doubling from here. Fixed rather than jittered: reruns must be reproducible."""
 
 _RETRYABLE_STATUS = frozenset({httpx.codes.TOO_MANY_REQUESTS, httpx.codes.REQUEST_TIMEOUT})
@@ -128,36 +139,56 @@ class OllamaProvider:
         payload = self._chat_payload(
             system=system, user=user, schema=prepare_schema(schema), max_tokens=cap
         )
-        # Timed inside the semaphore: waiting for a slot is a property of how the
-        # caller batched the run, not of the model, and folding it in would make
-        # latency depend on the shape of the sweep.
-        async with self._semaphore:
-            started = time.perf_counter()
-            response, retries = await self._request("POST", "/api/chat", payload)
-            latency_seconds = time.perf_counter() - started
+        # The envelope loop re-sends the whole request when the daemon returned a
+        # response it never finished -- see InterruptedEnvelopeError. It wraps the
+        # transport loop rather than living inside it because the HTTP exchange
+        # *succeeds* in this failure mode, so `_request`'s own retries are already
+        # spent by the time the envelope is parsed.
+        for attempt in range(ENVELOPE_RETRIES + 1):
+            if attempt:
+                await asyncio.sleep(BACKOFF_BASE_SECONDS * 2 ** (attempt - 1))
+            # Timed inside the semaphore: waiting for a slot is a property of how
+            # the caller batched the run, not of the model, and folding it in
+            # would make latency depend on the shape of the sweep.
+            async with self._semaphore:
+                started = time.perf_counter()
+                response, retries = await self._request("POST", "/api/chat", payload)
+                latency_seconds = time.perf_counter() - started
 
-        # Both raises carry the count `_request` already returned. Without it, two
-        # failures costing identical daemon time store 2 and 0 depending only on
-        # which raise fired -- and the rows that retried are exactly the rows
-        # reporting zero, since `Decision.retries` falls back to a default here.
-        if response.status_code == httpx.codes.NOT_FOUND:
-            raise MissingModelError(
-                f"Ollama has no model {self._model!r}. Run: ollama pull {self._model}",
-                retries=retries,
-            )
-        if response.status_code != httpx.codes.OK:
-            raise ProviderUnavailableError(
-                f"POST /api/chat returned {response.status_code}: {response.text[:200]}",
-                retries=retries,
-            )
-        return _parse_chat_response(
-            response,
-            model=self._model,
-            retries=retries,
-            latency_seconds=latency_seconds,
-            context_tokens=self._settings.context_tokens,
-            max_tokens=cap,
-        )
+            # Both raises carry the count `_request` already returned. Without it,
+            # two failures costing identical daemon time store 2 and 0 depending
+            # only on which raise fired -- and the rows that retried are exactly
+            # the rows reporting zero, since `Decision.retries` falls back to a
+            # default here.
+            if response.status_code == httpx.codes.NOT_FOUND:
+                raise MissingModelError(
+                    f"Ollama has no model {self._model!r}. Run: ollama pull {self._model}",
+                    retries=retries,
+                )
+            if response.status_code != httpx.codes.OK:
+                raise ProviderUnavailableError(
+                    f"POST /api/chat returned {response.status_code}: {response.text[:200]}",
+                    retries=retries,
+                )
+            try:
+                return _parse_chat_response(
+                    response,
+                    model=self._model,
+                    retries=retries,
+                    latency_seconds=latency_seconds,
+                    context_tokens=self._settings.context_tokens,
+                    max_tokens=cap,
+                )
+            except InterruptedEnvelopeError:
+                if attempt >= ENVELOPE_RETRIES:
+                    raise
+                _LOG.warning(
+                    "%s: daemon returned an unfinished response (attempt %d of %d); re-sending",
+                    self._model,
+                    attempt + 1,
+                    ENVELOPE_RETRIES + 1,
+                )
+        raise AssertionError("unreachable: the loop returns or raises")
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -320,9 +351,19 @@ def _reject_incomplete(
         # same silent misread MIN_OLLAMA_VERSION exists to prevent. A finished
         # envelope says so with `done`; anything else is a shape we cannot read.
         if envelope.get("done") is not True:
-            raise PreflightError(
-                f"{model}: /api/chat returned no done_reason and done="
-                f"{envelope.get('done')!r}; this is not an envelope shape this code can read"
+            # `done=False` on a non-streaming call is not a schema this code
+            # cannot read -- it is a response the daemon never finished. The one
+            # observed cause is Ollama's auto-updater restarting the daemon
+            # mid-generation, which killed two long runs before this was made
+            # retriable: as a PreflightError it took the whole sweep down for a
+            # condition that resolves itself in seconds. `generate` retries it;
+            # a daemon that stays broken exhausts the retries and still fails
+            # loudly, as ProviderUnavailableError.
+            raise InterruptedEnvelopeError(
+                f"{model}: /api/chat returned done="
+                f"{envelope.get('done')!r} with no done_reason; the daemon did not "
+                "finish this response (restart mid-generation?)",
+                retries=retries,
             )
     elif reason != "stop":
         raise TruncatedGenerationError(

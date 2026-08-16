@@ -80,6 +80,20 @@ class ProviderUnavailableError(RetriedError):
     """The daemon could not be reached, or kept returning a server error."""
 
 
+class InterruptedEnvelopeError(ProviderUnavailableError):
+    """The HTTP exchange succeeded but the daemon never finished the response.
+
+    A subclass of :class:`ProviderUnavailableError` because that is what it means
+    -- the daemon was not available *for the duration of this generation* -- and
+    everything that stores a failure already maps that class to
+    ``FailureMode.UNAVAILABLE``. Kept distinct so
+    :meth:`~council.agents.ollama.OllamaProvider.generate` can retry exactly this
+    case: the observed cause is Ollama's auto-updater restarting the daemon
+    mid-generation, which resolves itself in seconds, and which killed two long
+    runs while this raised as a non-retriable PreflightError.
+    """
+
+
 class MissingModelError(RetriedError):
     """The daemon is running but does not have the requested model.
 

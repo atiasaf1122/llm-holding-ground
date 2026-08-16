@@ -17,9 +17,9 @@ from pydantic import ValidationError
 from council.agents import ollama as provider_module
 from council.agents.provider import (
     ContextOverflowError,
+    InterruptedEnvelopeError,
     MalformedOutputError,
     MissingModelError,
-    PreflightError,
     TruncatedGenerationError,
 )
 from council.domain.signal import MAX_RATIONALE_CHARS, Signal
@@ -252,15 +252,45 @@ async def test_a_complete_envelope_without_a_done_reason_is_not_called_truncated
     assert result.data == SIGNAL_OUTPUT
 
 
-async def test_an_envelope_that_is_neither_done_nor_reasoned_stops_the_run() -> None:
+async def test_an_unfinished_envelope_is_retried_and_then_recovers() -> None:
+    """The auto-updater's signature: the daemon restarts mid-generation, the HTTP
+    exchange succeeds, and the envelope says done=False with no reason. Twice this
+    killed a multi-hour run as a non-retriable PreflightError; a restarted daemon
+    recovers in seconds, so the provider re-sends and the sweep never notices."""
+    calls = {"n": 0}
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"message": {"content": json.dumps(SIGNAL_OUTPUT)}})
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(200, json={"message": {"content": ""}, "done": False})
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(SIGNAL_OUTPUT)},
+                "done": True,
+                "done_reason": "stop",
+            },
+        )
+
+    provider = make_provider(handler)
+    completion = await provider.generate(system="persona", user="prices", schema=SIGNAL_SCHEMA)
+    await provider.aclose()
+
+    assert calls["n"] == 3, "two unfinished envelopes, then the re-sent request lands"
+    assert completion.data == SIGNAL_OUTPUT
+
+
+async def test_a_daemon_that_stays_broken_still_fails_loudly() -> None:
+    """Bounded retries: a daemon that keeps returning unfinished envelopes is a
+    real outage, and it surfaces as ProviderUnavailableError -- recorded per
+    decision as UNAVAILABLE rather than silently spinning forever."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"content": ""}, "done": False})
 
     provider = make_provider(handler)
 
-    # PreflightError, not a per-decision failure: an envelope shape this code
-    # cannot read is a reason to stop, not to record eighty thousand truncations.
-    with pytest.raises(PreflightError):
+    with pytest.raises(InterruptedEnvelopeError):
         await provider.generate(system="persona", user="prices", schema=SIGNAL_SCHEMA)
     await provider.aclose()
 
