@@ -52,7 +52,7 @@ from council.pipeline import (
     select_contested,
     stored_decisions,
 )
-from council.planning import SECONDS_PER_INFERENCE, plan_experiment
+from council.planning import SECONDS_PER_INFERENCE, TREATMENT_ARMS, plan_experiment
 from council.probe.render import render_probe
 from council.probe.session import probe_model
 from council.report import render_plan, render_results, results_as_json
@@ -256,6 +256,12 @@ def do_debate(args: argparse.Namespace, out: TextIO) -> int:
 
     contested = select_contested(decisions, settings=settings)
     print(f"{len(contested)} contested point(s) to debate", file=out)
+    chosen = getattr(args, "arms", None)
+    arms = (
+        TREATMENT_ARMS
+        if not chosen
+        else tuple(arm for arm in TREATMENT_ARMS if str(arm) in set(chosen))
+    )
     report = asyncio.run(
         run_debate_arms(
             settings=settings,
@@ -264,6 +270,7 @@ def do_debate(args: argparse.Namespace, out: TextIO) -> int:
             contested=contested,
             provider_factory=_factory(settings, mock=args.mock),
             store=store,
+            arms=arms,
         )
     )
     print(
@@ -499,11 +506,23 @@ def build_parser() -> argparse.ArgumentParser:
         "generate", parents=[common, generating], help="run the independent arm"
     ).set_defaults(handler=do_generate)
 
-    subcommands.add_parser(
+    debate = subcommands.add_parser(
         "debate",
         parents=[common, generating],
         help="run the debate arms over contested points",
-    ).set_defaults(handler=do_debate)
+    )
+    debate.add_argument(
+        "--arms",
+        metavar="ARM",
+        nargs="+",
+        choices=[str(arm) for arm in TREATMENT_ARMS],
+        help=(
+            "which treatment arms to run; defaults to all of them. The point set "
+            "is unaffected -- servability is a property of the whole design, so a "
+            "subset run answers the same points the full roster would"
+        ),
+    )
+    debate.set_defaults(handler=do_debate)
 
     probe = subcommands.add_parser(
         "probe",

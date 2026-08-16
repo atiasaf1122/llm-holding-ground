@@ -379,3 +379,18 @@ def test_a_probe_in_which_every_generation_failed_does_not_exit_zero(
     code, _ = run("probe", data_dir=tmp_path)
 
     assert code == EXIT_FAILURE
+
+
+def test_a_subset_of_arms_runs_without_touching_the_others(tmp_path: Path) -> None:
+    """The D10 run's mechanism: `--arms` narrows what is generated, and the point
+    set stays the whole design's, so a subset answers the same points."""
+    run("generate", data_dir=tmp_path)
+
+    code, _ = run("debate", "--arms", "debate", "debate_placebo", data_dir=tmp_path)
+
+    assert code == EXIT_OK
+    decisions = pd.read_parquet(tmp_path / "decisions.parquet")
+    arms = set(decisions["arm"].unique())
+    assert "debate" in arms and "debate_placebo" in arms
+    assert "debate_rationale_only" not in arms
+    assert "debate_contradictor" not in arms
