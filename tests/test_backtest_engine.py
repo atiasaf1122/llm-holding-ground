@@ -186,6 +186,7 @@ def test_no_one_notch_step_along_the_exposure_grid_ever_trades() -> None:
 
     opens = opens_of([100.0] * 5)
     calendar = pd.DatetimeIndex(opens.index)
+
     # An entry from the far end of the range first, so the book sits on ``held``
     # exactly -- including the notches a flat book cannot reach in one move.
     def entry(held: float) -> float:
@@ -195,9 +196,7 @@ def test_no_one_notch_step_along_the_exposure_grid_ever_trades() -> None:
         (held, asked)
         for first, second in adjacent
         for held, asked in ((first, second), (second, first))
-        if backtest(
-            opens, targets_on(calendar, {0: entry(held), 1: held, 2: asked})
-        ).position[3]
+        if backtest(opens, targets_on(calendar, {0: entry(held), 1: held, 2: asked})).position[3]
         != held
     ]
 
@@ -291,9 +290,7 @@ def test_a_ticker_missing_a_session_raises_rather_than_returning_a_blank_curve()
     targets = pd.DataFrame(1.0, index=opens.index, columns=opens.columns)
 
     with pytest.raises(ValueError, match="RIGHT: opens must be finite and positive"):
-        run_backtest(
-            targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=THRESHOLD
-        )
+        run_backtest(targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=THRESHOLD)
 
 
 def test_a_non_positive_open_raises_rather_than_producing_an_infinite_return() -> None:
@@ -318,9 +315,7 @@ def test_the_basket_return_is_the_equal_weight_mean_of_its_tickers() -> None:
     )
     targets = pd.DataFrame(1.0, index=calendar, columns=opens.columns)
 
-    result = run_backtest(
-        targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=0.0
-    )
+    result = run_backtest(targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=0.0)
 
     assert result.net_return[1] == pytest.approx(0.1 / 2.0)
     assert result.turnover == pytest.approx(1.0)

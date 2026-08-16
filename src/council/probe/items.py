@@ -267,9 +267,7 @@ def _best_match(reply: AnswerForm, forms: Sequence[AnswerForm]) -> tuple[int, in
     with both.
     """
     ranked = [
-        (start, -len(form))
-        for form in forms
-        if (start := _first_start(reply, form)) is not None
+        (start, -len(form)) for form in forms if (start := _first_start(reply, form)) is not None
     ]
     return min(ranked, default=None)
 

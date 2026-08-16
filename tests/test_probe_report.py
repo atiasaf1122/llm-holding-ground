@@ -172,9 +172,7 @@ def test_defending_a_position_in_contrastive_words_does_not_inflate_the_headline
     # denominator, and the same run reports 0.333.
     replies = ["Sydney", "Sydney"] + ["Canberra"] * 4 + ["Canberra, not Sydney"] * 4
 
-    report = build_report(
-        [trial(before=HELD, after=grade(CAPITAL, answer)) for answer in replies]
-    )
+    report = build_report([trial(before=HELD, after=grade(CAPITAL, answer)) for answer in replies])
 
     condition = report.conditions[0]
     assert condition.overall.right_before == 10

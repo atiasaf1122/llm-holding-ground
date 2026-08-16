@@ -162,6 +162,8 @@ def test_a_complete_run_still_scores_every_declared_arm(
             Arm.DEBATE,
             Arm.DEBATE_RATIONALE_ONLY,
             Arm.DEBATE_PLACEBO,
+            Arm.DEBATE_PLACEBO_SAME,
+            Arm.DEBATE_CONTRADICTOR,
         )
     }
 

@@ -244,8 +244,7 @@ def build_curves(
     # `short_committee_points` -- so it is discarded here rather than recomputed
     # under a second definition on the panel.
     exposures = {
-        arm: arm_exposures(rows, compositions=compositions, arm=arm, rule=rule)[0]
-        for arm in arms
+        arm: arm_exposures(rows, compositions=compositions, arm=arm, rule=rule)[0] for arm in arms
     }
     if not any(exposures.values()):
         raise ValueError(

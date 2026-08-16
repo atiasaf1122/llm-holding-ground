@@ -70,9 +70,7 @@ def is_servable(pool: PlaceboPool, point: PointKey, *, rounds: int = 1, **gap: i
 
 @pytest.mark.parametrize("gap", [0, 1, 3, 60])
 @pytest.mark.parametrize("rounds", [1, 2, 6])
-def test_the_preflight_admits_exactly_the_points_the_draw_can_serve(
-    gap: int, rounds: int
-) -> None:
+def test_the_preflight_admits_exactly_the_points_the_draw_can_serve(gap: int, rounds: int) -> None:
     # Parametrised over the cap as well as the gap. The draw takes one donor per
     # round and no longer wraps, so a point with four candidates serves a four-round
     # conversation and raises at round five of a six-round one -- and a pre-flight
@@ -222,13 +220,18 @@ def test_the_pool_holds_every_session_and_not_the_contested_ones_only() -> None:
     settled_day, split_day = CALENDAR[0], CALENDAR[1]
     decisions = pd.DataFrame(
         [
-            _independent_row(on=settled_day, model=seat.model, persona=seat.persona.name,
-                             exposure=0.5)
+            _independent_row(
+                on=settled_day, model=seat.model, persona=seat.persona.name, exposure=0.5
+            )
             for seat in seats
         ]
         + [
-            _independent_row(on=split_day, model=seat.model, persona=seat.persona.name,
-                             exposure=0.5 if index % 2 else -0.5)
+            _independent_row(
+                on=split_day,
+                model=seat.model,
+                persona=seat.persona.name,
+                exposure=0.5 if index % 2 else -0.5,
+            )
             for index, seat in enumerate(seats)
         ]
     )
@@ -304,8 +307,9 @@ def test_no_cap_consumer_still_refuses_the_rounds_a_run_now_produces() -> None:
 
     # The transcript panel sets the extra rounds aside instead of raising, so the
     # panel renders rather than taking the dashboard down.
-    frame = pd.DataFrame([_row_at(OPENING_ROUND), _row_at(REBUTTAL_ROUND),
-                          _row_at(above_first_rebuttal)])
+    frame = pd.DataFrame(
+        [_row_at(OPENING_ROUND), _row_at(REBUTTAL_ROUND), _row_at(above_first_rebuttal)]
+    )
     transcripts = read_transcripts(frame)
     assert len(transcripts) == 1
     assert len(transcripts[0].seats) == 1
@@ -361,9 +365,7 @@ def test_the_debate_report_says_its_counters_are_pooled_over_the_arms() -> None:
 
     from council.debate.sweep import DebateReport
 
-    sweep = (PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py").read_text(
-        encoding="utf-8"
-    )
+    sweep = (PROJECT_ROOT / "src" / "council" / "debate" / "sweep.py").read_text(encoding="utf-8")
     documented = " ".join((DebateReport.__doc__ or "").split())
     names = {field.name for field in fields(DebateReport)}
 

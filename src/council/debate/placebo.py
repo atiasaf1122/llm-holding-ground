@@ -68,6 +68,7 @@ def donor_views(
     seed: int | None,
     round_index: int = 1,
     min_gap: int | None = None,
+    same_instrument: bool = False,
 ) -> tuple[SeatView, ...]:
     """The donor point's views, matched to this committee, in committee order.
 
@@ -87,6 +88,7 @@ def donor_views(
         seed=seed,
         round_index=round_index,
         min_gap=min_gap,
+        same_instrument=same_instrument,
     )
     return seated_views(pool[donor], composition=composition)
 
@@ -100,6 +102,7 @@ def select_placebo_point(
     seed: int | None = None,
     round_index: int = 1,
     min_gap: int | None = None,
+    same_instrument: bool = False,
 ) -> PointKey:
     """Pick the earlier decision point whose views the placebo arm will show.
 
@@ -156,15 +159,25 @@ def select_placebo_point(
     # cutoff *is* the decision date, and a `<=` filter alone would admit the day
     # being decided as its own donor -- the exact lookahead this module exists to
     # refuse, reintroduced by the gap check that was meant to strengthen it.
+    # `same_instrument` narrows the candidate set to the reader's own ticker --
+    # the D14 decomposition. The digest ordering below runs over whichever set
+    # this filter admits, so the two placebo arms draw different donors for the
+    # same point by construction; that is the manipulation, not an accident. The
+    # cross-instrument arm's candidate set is unchanged by the flag, so its
+    # already-stored draws reproduce exactly.
     candidates = sorted(
         key
         for key, views in pool.items()
-        if key[0] < decision_date and key[0] <= cutoff and len(views) == required_seats
+        if key[0] < decision_date
+        and key[0] <= cutoff
+        and len(views) == required_seats
+        and (not same_instrument or key[1] == ticker)
     )
     if not candidates:
+        kind = "same-instrument " if same_instrument else ""
         raise ValueError(
-            f"no placebo donor for {decision_date} {ticker}: the pool holds no session "
-            f"at least {gap} back with a view from all {required_seats} seat(s)"
+            f"no {kind}placebo donor for {decision_date} {ticker}: the pool holds no "
+            f"session at least {gap} back with a view from all {required_seats} seat(s)"
         )
 
     resolved_seed = settings.seed if seed is None else seed

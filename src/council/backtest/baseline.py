@@ -163,12 +163,11 @@ def _pools_by_ticker(
         missing = [ticker for ticker in tickers if ticker not in exposure_pool]
         if missing:
             raise ValueError(
-                "exposure_pool holds no exposures for " + ", ".join(missing)
+                "exposure_pool holds no exposures for "
+                + ", ".join(missing)
                 + "; the null draws each ticker's column from that ticker's own pool"
             )
-        return {
-            ticker: _validated_pool(exposure_pool[ticker], named=ticker) for ticker in tickers
-        }
+        return {ticker: _validated_pool(exposure_pool[ticker], named=ticker) for ticker in tickers}
     shared = _validated_pool(exposure_pool, named=None)
     return {ticker: shared for ticker in tickers}
 
@@ -188,9 +187,7 @@ baseline. The scalar form is kept for callers that genuinely have one population
 """
 
 
-def _targets_by_ticker(
-    target: TurnoverTarget, *, tickers: Sequence[str]
-) -> dict[str, float]:
+def _targets_by_ticker(target: TurnoverTarget, *, tickers: Sequence[str]) -> dict[str, float]:
     """The turnover each column is matched to.
 
     Raises:
@@ -203,7 +200,8 @@ def _targets_by_ticker(
         missing = [ticker for ticker in tickers if ticker not in target]
         if missing:
             raise ValueError(
-                "target_turnover_per_period holds no rate for " + ", ".join(missing)
+                "target_turnover_per_period holds no rate for "
+                + ", ".join(missing)
                 + "; the null matches each ticker's column to that ticker's own rate"
             )
         return {ticker: float(target[ticker]) for ticker in tickers}

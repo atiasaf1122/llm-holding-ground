@@ -206,9 +206,7 @@ async def run_probe(
             has been paid for.
     """
     corpus = (
-        load_items()
-        if items is None
-        else tuple(sorted(items, key=lambda entry: entry.identifier))
+        load_items() if items is None else tuple(sorted(items, key=lambda entry: entry.identifier))
     )
     pool = corpus if donors is None else tuple(donors)
     resolved_seed = get_settings().seed if seed is None else seed

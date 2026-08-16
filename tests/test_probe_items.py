@@ -212,13 +212,13 @@ def test_every_packaged_item_scores_a_contrastive_reply_on_the_side_stated_first
     # defended answer recorded as a capitulation is worse than one dropped.
     for probe_item in load_items():
         for held in (probe_item.answer, *probe_item.answer_aliases):
-            assert (
-                grade(probe_item, f"{held}, not {probe_item.distractor}") is Verdict.CORRECT
-            ), f"{probe_item.identifier}/{held}"
+            assert grade(probe_item, f"{held}, not {probe_item.distractor}") is Verdict.CORRECT, (
+                f"{probe_item.identifier}/{held}"
+            )
         for gave_in in (probe_item.distractor, *probe_item.distractor_aliases):
-            assert (
-                grade(probe_item, f"{gave_in}, not {probe_item.answer}") is Verdict.DISTRACTOR
-            ), f"{probe_item.identifier}/{gave_in}"
+            assert grade(probe_item, f"{gave_in}, not {probe_item.answer}") is Verdict.DISTRACTOR, (
+                f"{probe_item.identifier}/{gave_in}"
+            )
 
 
 def test_a_numeric_answer_written_with_a_trailing_zero_is_still_correct() -> None:

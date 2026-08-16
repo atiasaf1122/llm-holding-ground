@@ -33,10 +33,11 @@ from council.agents.runner import (
 from council.agents.store import ConversationKey, DecisionStore
 from council.config import Settings, get_settings
 from council.debate.caller import DecisionCaller, SeatDecision
-from council.debate.compositions import Composition, balanced_design
+from council.debate.compositions import Composition, Seat, balanced_design
+from council.debate.contra import generate_counters
 from council.debate.peers import NoPeersError, SeatView
 from council.debate.placebo import PlaceboPool
-from council.debate.protocol import run_debate
+from council.debate.protocol import PLACEBO_ARMS, arm_round_cap, run_debate
 from council.domain.signal import Arm, StopReason
 from council.evaluation.dispersion import Dispersion
 from council.evaluation.frames import (
@@ -115,6 +116,7 @@ def has_donor(
     required_seats: int,
     min_gap: int | None = None,
     rounds: int = 1,
+    same_instrument: bool = False,
 ) -> bool:
     """Whether the pool holds enough usable earlier days for this point.
 
@@ -174,7 +176,10 @@ def has_donor(
     candidates = sum(
         1
         for key, views in pool.items()
-        if key[0] < decision_date and key[0] <= cutoff and len(views) == required_seats
+        if key[0] < decision_date
+        and key[0] <= cutoff
+        and len(views) == required_seats
+        and (not same_instrument or key[1] == point[1])
     )
     return candidates >= rounds
 
@@ -293,12 +298,13 @@ class _Sweep:
             ):
                 report = report.merge(DebateReport(skipped=1))
                 continue
-            if arm is Arm.DEBATE_PLACEBO and not has_donor(
+            if arm in PLACEBO_ARMS and not has_donor(
                 pool,
                 dispersion.point,
                 required_seats=composition.size,
                 min_gap=self.settings.placebo_min_gap_sessions,
-                rounds=self.rebuttal_rounds,
+                rounds=arm_round_cap(arm, self.rebuttal_rounds),
+                same_instrument=arm is Arm.DEBATE_PLACEBO_SAME,
             ):
                 # Kept as a backstop rather than as the filter it used to be.
                 # `run_debate_arms` now drops a point no committee's pool can serve
@@ -373,16 +379,45 @@ class _Sweep:
             seed=self.settings.seed,
         )
         try:
+            price_context = self.contexts[(dispersion.ticker, dispersion.decision_date)]
+            contra = None
+            if arm is Arm.DEBATE_CONTRADICTOR:
+                # Bound here rather than in the protocol so the provider mapping
+                # and the archive path stay the sweep's business. The archive
+                # sits beside the completions file because it is the same kind
+                # of record: text a model produced that no decision row carries.
+                providers = self.providers
+                settings = self.settings
+                comp = composition
+                point = dispersion.point
+
+                async def contra(
+                    openings: Mapping[Seat, SeatView],
+                    _comp: Composition = comp,
+                    _pt: PointKey = point,
+                    _ctx: str = price_context,
+                ) -> dict[Seat, tuple[SeatView, ...]]:
+                    return await generate_counters(
+                        providers=providers,
+                        composition=_comp,
+                        point=_pt,
+                        price_context=_ctx,
+                        openings=openings,
+                        max_tokens=settings.max_output_tokens,
+                        archive=settings.data_dir / "counters.jsonl",
+                    )
+
             transcript = await run_debate(
                 composition=composition,
                 arm=arm,
                 dispersion=dispersion,
-                price_context=self.contexts[(dispersion.ticker, dispersion.decision_date)],
+                price_context=price_context,
                 caller=caller,
-                placebo_pool=pool if arm is Arm.DEBATE_PLACEBO else None,
+                placebo_pool=pool if arm in PLACEBO_ARMS else None,
+                contra_views=contra,
                 seed=self.settings.seed,
                 dispersion_threshold=self.threshold,
-                max_rounds=self.rebuttal_rounds,
+                max_rounds=arm_round_cap(arm, self.rebuttal_rounds),
                 # From this sweep's settings rather than left to the module
                 # default, which reads the process-wide instance. A run
                 # configured with its own Settings must not have one bound
@@ -500,6 +535,14 @@ def servable_points(
     function, so the plan and the sweep cannot disagree about which points are in
     the experiment.
     """
+    # The donor requirements of the WHOLE experiment's roster, never of
+    # whichever subset this invocation happens to run. A first version took the
+    # caller's arm list, and a test caught what that does: `debate` run on one
+    # arm at a time served each arm a different point set -- the debate arm kept
+    # the 5 points the placebo cannot serve, which is precisely the coverage
+    # confound this function exists to remove. The requirement is a property of
+    # the design, so it is resolved from the design's own roster.
+    demanded = tuple(arm for arm in TREATMENT_ARMS if arm in PLACEBO_ARMS)
     pools = {
         table.identifier: placebo_pool_for(decisions, composition=table) for table in committees
     }
@@ -512,9 +555,11 @@ def servable_points(
                 point,
                 required_seats=table.size,
                 min_gap=min_gap,
-                rounds=rounds,
+                rounds=arm_round_cap(arm, rounds),
+                same_instrument=arm is Arm.DEBATE_PLACEBO_SAME,
             )
             for table in committees
+            for arm in demanded
         )
     )
 
@@ -558,9 +603,7 @@ async def run_debate_arms(
         ValueError: for a cap below one rebuttal round. See :func:`_check_cap`, which
             is what is left of a refusal that used to cover every cap but one.
     """
-    rebuttal_rounds = (
-        settings.max_debate_rounds if rebuttal_rounds is None else rebuttal_rounds
-    )
+    rebuttal_rounds = settings.max_debate_rounds if rebuttal_rounds is None else rebuttal_rounds
     _check_cap(rebuttal_rounds)
     store = store or DecisionStore(
         decisions_path=settings.decisions_path, completions_path=settings.completions_path
@@ -648,4 +691,3 @@ async def run_debate_arms(
             await provider.aclose()
     store.consolidate()
     return report
-

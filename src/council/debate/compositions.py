@@ -1,14 +1,14 @@
 """Which committees are actually run, and why there are eight of them.
 
 Assigning each of four models one of the four personas freely gives ``4 ** 4 =
-256`` committees. Each committee costs two rounds of generation per seat at each
-decision point -- 8 calls -- and the first run has on the order of 1,000 decision
-points, so the full grid is ``256 * 8 * 1000 = 2,048,000`` calls **per arm**, and
-``6,144,000`` across the three treatment arms
-:data:`council.planning.TREATMENT_ARMS` names. At
+256`` committees. A conversation at the shipped six-round cap costs up to
+``4 * 7 = 28`` calls, the run has on the order of 1,000 decision points, and
+:data:`council.planning.TREATMENT_ARMS` names four full-length arms plus the
+one-round contradictor with its 12 counter-generations per point -- so the full
+grid is ``256 * 28 * 1000 * 4 + 256 * 20 * 1000 = 33,792,000`` calls. At
 :data:`council.planning.SECONDS_PER_INFERENCE` with four models resident -- the
 parallelism :meth:`council.planning.StagePlan.seconds` applies -- that is about
-twenty-seven
+a hundred and forty-seven
 days of continuous generation, on a card this project has already promised not to
 monopolise. It is also mostly redundant: the great
 majority of those 256 committees differ from another only in which model happens

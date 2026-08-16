@@ -233,6 +233,4 @@ def buy_and_hold(opens: pd.DataFrame) -> BacktestResult:
     saying so plainly is worth more than omitting it.
     """
     always_long = pd.DataFrame(1.0, index=opens.index, columns=opens.columns)
-    return run_backtest(
-        targets=always_long, opens=opens, cost_bps=0.0, rebalance_threshold=0.0
-    )
+    return run_backtest(targets=always_long, opens=opens, cost_bps=0.0, rebalance_threshold=0.0)

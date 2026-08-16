@@ -106,9 +106,7 @@ class MissingArtefactsError(FileNotFoundError):
 
     def __init__(self, status: ArtefactStatus) -> None:
         self.status = status
-        super().__init__(
-            "no run to read: " + ", ".join(str(item.path) for item in status.missing)
-        )
+        super().__init__("no run to read: " + ", ".join(str(item.path) for item in status.missing))
 
 
 def artefact_status(*, decisions_path: Path, prices_path: Path) -> ArtefactStatus:
@@ -117,9 +115,7 @@ def artefact_status(*, decisions_path: Path, prices_path: Path) -> ArtefactStatu
         MissingArtefact(label="decisions", path=decisions_path, produced_by=DECISIONS_SOURCE),
         MissingArtefact(label="prices", path=prices_path, produced_by=PRICES_SOURCE),
     )
-    return ArtefactStatus(
-        missing=tuple(item for item in candidates if not item.path.is_file())
-    )
+    return ArtefactStatus(missing=tuple(item for item in candidates if not item.path.is_file()))
 
 
 def require_columns(frame: pd.DataFrame) -> pd.DataFrame:

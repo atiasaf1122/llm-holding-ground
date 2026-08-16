@@ -462,9 +462,7 @@ def test_the_archive_keeps_the_whole_prompt_and_the_raw_response(store: Decision
         completions=[make_record()],
     )
 
-    archived = json.loads(
-        store.completions_path.read_text(encoding="utf-8").strip()
-    )
+    archived = json.loads(store.completions_path.read_text(encoding="utf-8").strip())
     assert archived["user"] == "returns: +1.00"
     assert archived["response"] == {"exposure": 0.5}
     assert archived["error"] is None

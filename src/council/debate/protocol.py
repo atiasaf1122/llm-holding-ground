@@ -64,7 +64,7 @@ protocol: who speaks when, who is shown to whom, and when a point is abandoned.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
@@ -72,6 +72,7 @@ from typing import Protocol
 from council.agents.prompt import PeerView, RenderedPrompt
 from council.config import get_settings
 from council.debate.compositions import Composition, Seat
+from council.debate.contra import CONTRA_ROUND_CAP
 from council.debate.peers import NoPeersError, SeatView, peers_for, seated_views
 from council.debate.placebo import PlaceboPool, donor_views
 from council.domain.signal import Arm, FailureMode, Signal
@@ -282,6 +283,29 @@ def rebuttal_peers(
     )
 
 
+PLACEBO_ARMS: frozenset[Arm] = frozenset({Arm.DEBATE_PLACEBO, Arm.DEBATE_PLACEBO_SAME})
+"""Both placebo variants. One donor-draw code path serves the two; the only
+difference is the ``same_instrument`` flag, which is the D14 manipulation."""
+
+ContraViews = Callable[[Mapping[Seat, SeatView]], Awaitable[dict[Seat, tuple[SeatView, ...]]]]
+"""Given every seat's opening view, every reader's counter-views, generated.
+
+A callable rather than the providers themselves so that the protocol stays free
+of provider plumbing -- the sweep, which owns the providers, injects this."""
+
+
+def arm_round_cap(arm: Arm, cap: int) -> int:
+    """The cap this arm actually runs to, given the sweep's cap.
+
+    The contradictor is clamped to :data:`~council.debate.contra.CONTRA_ROUND_CAP`
+    -- the adjudicating metric is round 0 to 1 and no later-round peer schedule
+    for a targeted contradiction is defensible. One function, imported by the
+    sweep that runs conversations and the planner that prices them, so the two
+    cannot disagree about how long an arm's conversations are.
+    """
+    return min(cap, CONTRA_ROUND_CAP) if arm is Arm.DEBATE_CONTRADICTOR else cap
+
+
 async def run_debate(
     *,
     composition: Composition,
@@ -290,6 +314,7 @@ async def run_debate(
     price_context: str,
     caller: AgentCaller,
     placebo_pool: PlaceboPool | None = None,
+    contra_views: ContraViews | None = None,
     seed: int | None = None,
     dispersion_threshold: float | None = None,
     max_rounds: int | None = None,
@@ -322,7 +347,12 @@ async def run_debate(
             read to tell it from a debate that ran to a stopping condition.
     """
     settings = get_settings()
-    cap = settings.max_debate_rounds if max_rounds is None else max_rounds
+    cap = arm_round_cap(arm, settings.max_debate_rounds if max_rounds is None else max_rounds)
+    if arm is Arm.DEBATE_CONTRADICTOR and contra_views is None:
+        raise ValueError(
+            "the contradictor arm needs a counter-argument generator; the sweep "
+            "injects one built over its own providers"
+        )
     spread = settings.agreement_spread if agreement_spread is None else agreement_spread
     stillness = settings.stillness_rounds if stillness_rounds is None else stillness_rounds
     # Resolved the same way the placebo draw resolves it, and for the same reason:
@@ -337,7 +367,7 @@ async def run_debate(
         threshold=dispersion_threshold,
     )
     point = (dispersion.decision_date, dispersion.ticker)
-    if arm is Arm.DEBATE_PLACEBO:
+    if arm in PLACEBO_ARMS:
         # Drawn once here purely to fail fast: an unusable pool would otherwise
         # cost a whole opening round before raising. The draw the debate uses is
         # made per round, inside the loop.
@@ -355,6 +385,7 @@ async def run_debate(
             seed=seed,
             round_index=cap,
             min_gap=placebo_min_gap,
+            same_instrument=arm is Arm.DEBATE_PLACEBO_SAME,
         )
 
     seats = composition.seats
@@ -372,8 +403,30 @@ async def run_debate(
     reason = StopReason.CAP
     still_streak = 0
 
+    contra_blocks: tuple[tuple[PeerView, ...], ...] | None = None
+    if arm is Arm.DEBATE_CONTRADICTOR:
+        # Generated once, from the opening round, before the loop: the cap is one,
+        # so there is no later round to regenerate for -- and the docstring on
+        # `arm_round_cap` has the argument for why there never should be. Raises
+        # NoPeersError on any incomplete opening or failed counter, which the
+        # sweep books as an abandoned conversation.
+        assert contra_views is not None  # checked above; narrows the type
+        openings = {turn.seat: turn.view for turn in opening if turn.view is not None}
+        counters = await contra_views(openings)
+        contra_blocks = tuple(
+            peers_for(
+                seat,
+                views=counters.get(seat, ()),
+                order_token=(
+                    f"{resolved_seed}|{composition.identifier}"
+                    f"|{dispersion.decision_date.isoformat()}|{dispersion.ticker}|1"
+                ),
+            )
+            for seat in seats
+        )
+
     for round_index in range(1, cap + 1):
-        if arm is Arm.DEBATE_PLACEBO:
+        if arm in PLACEBO_ARMS:
             # A fresh donor each round. Repeating one frozen peer block would let
             # the control reach stillness for a reason the treatment never faces --
             # nothing new to answer -- and stillness is now a measurement.
@@ -384,6 +437,7 @@ async def run_debate(
                 seed=seed,
                 round_index=round_index,
                 min_gap=placebo_min_gap,
+                same_instrument=arm is Arm.DEBATE_PLACEBO_SAME,
             )
             # Restricted to the seats that spoke in the round just taken. The donor
             # always holds every chair, so without this a failed seat costs each
@@ -403,7 +457,9 @@ async def run_debate(
         rounds.append(
             await _take_round(
                 seats=seats,
-                peer_blocks=rebuttal_peers(
+                peer_blocks=contra_blocks
+                if contra_blocks is not None
+                else rebuttal_peers(
                     composition=composition,
                     views=views,
                     # Deliberately *not* keyed by arm. Every other field varies the
@@ -444,9 +500,7 @@ async def run_debate(
         # the moment anyone moves: a committee that goes quiet, is stirred by one
         # seat, then goes quiet again has not been still for two rounds.
         still_streak = (
-            still_streak + 1
-            if _nobody_moved(rounds[-2], rounds[-1], seats=len(seats))
-            else 0
+            still_streak + 1 if _nobody_moved(rounds[-2], rounds[-1], seats=len(seats)) else 0
         )
         if still_streak >= stillness:
             reason = StopReason.SETTLED

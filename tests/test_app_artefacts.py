@@ -147,9 +147,7 @@ def test_an_empty_decisions_file_is_distinguishable_from_a_missing_one() -> None
 
 def test_the_arms_come_back_in_the_order_the_domain_declares_them() -> None:
     results = Results(
-        decisions=frame_of(
-            stored(arm="debate_placebo"), stored(arm="debate"), independent()
-        ),
+        decisions=frame_of(stored(arm="debate_placebo"), stored(arm="debate"), independent()),
         opens=pd.DataFrame(),
     )
 

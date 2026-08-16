@@ -343,9 +343,7 @@ def test_a_curve_covers_one_period_fewer_than_the_calendar_has_sessions() -> Non
 
 def test_the_long_frame_carries_every_curve_under_its_own_label() -> None:
     curves = (
-        run_curve(
-            label="flat", exposures={}, opens=opens(), cost_bps=0.0, rebalance_threshold=0.0
-        ),
+        run_curve(label="flat", exposures={}, opens=opens(), cost_bps=0.0, rebalance_threshold=0.0),
     )
 
     frame = curves_frame(curves)
@@ -360,9 +358,7 @@ def test_an_empty_set_of_curves_still_has_the_columns_a_chart_reads() -> None:
 
 def test_the_metrics_table_has_one_row_per_curve() -> None:
     curves = (
-        run_curve(
-            label="flat", exposures={}, opens=opens(), cost_bps=0.0, rebalance_threshold=0.0
-        ),
+        run_curve(label="flat", exposures={}, opens=opens(), cost_bps=0.0, rebalance_threshold=0.0),
     )
 
     table = metrics_frame(curves)
@@ -374,8 +370,6 @@ def test_the_metrics_table_has_one_row_per_curve() -> None:
 def test_a_hand_built_composition_is_scored_like_any_other() -> None:
     # `compositions_for` reads the design it is handed rather than rebuilding one,
     # so a caller with its own committee list is not a special case.
-    table = Composition(
-        identifier="hand-built", seats=(Seat(model="alpha", persona=PERSONAS[0]),)
-    )
+    table = Composition(identifier="hand-built", seats=(Seat(model="alpha", persona=PERSONAS[0]),))
 
     assert compositions_for("hand-built", (table,)) == (table,)

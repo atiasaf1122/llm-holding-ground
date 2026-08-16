@@ -73,6 +73,37 @@ class Arm(StrEnum):
     If agents move as much here as in a real debate, they are not responding to
     the argument at all -- only to being contradicted. That would make every
     result in the debate arm mean something quite different.
+
+    The donor draw constrains the date and not the ticker, so on a two-ticker
+    universe about half the donors are the other instrument (D14 measured 49.0%
+    on the published run). :attr:`DEBATE_PLACEBO_SAME` exists to split that
+    bundle.
+    """
+
+    DEBATE_PLACEBO_SAME = "debate_placebo_same_instrument"
+    """The placebo with the donor constrained to the reader's own instrument.
+
+    Identical to :attr:`DEBATE_PLACEBO` in every other respect -- same rendering,
+    same per-round redraw, same minimum gap -- so the difference between the two
+    arms' rates is what instrument displacement contributes, which is the
+    decomposition D14 priced as almost free. Added in the extension run, after
+    the first four arms' results were published; it is not pre-registered and
+    the adjudication it feeds is declared in ``docs/findings.md`` before it ran.
+    """
+
+    DEBATE_CONTRADICTOR = "debate_contradictor"
+    """Peers who contradict the reader *coherently*: right day, right data,
+    opposite conclusion.
+
+    Each of the reader's three peers presents a counter-argument against the
+    reader's opening view, authored by that peer's model on the day's real
+    context, with its position rendered exactly as the debate arm renders one.
+    The arm that adjudicates D8: if it moves agents like the placebo, the
+    movement is about contradiction; if like the debate arm, the placebo's
+    surplus was about incoherence. Capped at one rebuttal round because the
+    pre-registered adjudicating metric is the round-0-to-1 shift rate and no
+    later-round peer schedule for a targeted contradiction is defensible -- see
+    :func:`council.debate.protocol.arm_round_cap`.
     """
 
 

@@ -250,9 +250,7 @@ def test_adding_an_arm_later_regenerates_only_that_arm(
     run_debates(settings, prices, arms=(Arm.DEBATE,))
     already = rows_in_arm(stored_decisions(open_store(settings)), Arm.DEBATE)
 
-    factory, report = run_debates(
-        settings, prices, arms=(Arm.DEBATE, Arm.DEBATE_RATIONALE_ONLY)
-    )
+    factory, report = run_debates(settings, prices, arms=(Arm.DEBATE, Arm.DEBATE_RATIONALE_ONLY))
 
     stored = stored_decisions(open_store(settings))
     added = rows_in_arm(stored, Arm.DEBATE_RATIONALE_ONLY)
@@ -298,9 +296,7 @@ def test_the_three_arms_hold_conversations_at_exactly_the_same_points(
     # the report that claims it.
     settings, _ = finished
     rows = frame_to_rows(stored_decisions(open_store(settings)))
-    covered = {
-        arm: {row.point for row in rows if row.arm == str(arm)} for arm in TREATMENT_ARMS
-    }
+    covered = {arm: {row.point for row in rows if row.arm == str(arm)} for arm in TREATMENT_ARMS}
 
     assert len(set(map(frozenset, covered.values()))) == 1
     assert covered[Arm.DEBATE_PLACEBO]
@@ -448,9 +444,7 @@ def test_the_pipeline_runs_end_to_end_from_a_price_file(
 ) -> None:
     prices.to_parquet(settings.prices_path)
 
-    outcome = asyncio.run(
-        run_experiment(settings=settings, provider_factory=RecordingFactory())
-    )
+    outcome = asyncio.run(run_experiment(settings=settings, provider_factory=RecordingFactory()))
 
     assert outcome.decision_count > 0
     assert outcome.arm(Arm.DEBATE).metrics.periods > 0

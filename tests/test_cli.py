@@ -120,6 +120,8 @@ def test_generate_then_debate_then_evaluate_writes_a_results_file(tmp_path: Path
         "debate",
         "debate_rationale_only",
         "debate_placebo",
+        "debate_placebo_same_instrument",
+        "debate_contradictor",
     ]
     assert "Shift rate by prior confidence" in printed
 

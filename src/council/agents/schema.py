@@ -173,8 +173,6 @@ def _resolve(
     resolved = _expand(target, definitions, (*active, reference))
     # Keywords written beside a $ref refine it, so they win over the definition.
     siblings = {
-        name: _expand(value, definitions, active)
-        for name, value in node.items()
-        if name != "$ref"
+        name: _expand(value, definitions, active) for name, value in node.items() if name != "$ref"
     }
     return {**resolved, **siblings}

@@ -28,9 +28,7 @@ def opens_frame(tickers: tuple[str, ...] = ("AAA", "BBB"), sessions: int = 90) -
 
 
 def realised_turnover_per_period(opens: pd.DataFrame, targets: pd.DataFrame) -> float:
-    result = run_backtest(
-        targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=THRESHOLD
-    )
+    result = run_backtest(targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=THRESHOLD)
     return evaluate(result).turnover_per_period
 
 
@@ -243,9 +241,7 @@ def test_the_budget_is_matched_against_what_the_engine_realises_not_the_raw_path
         rebalance_threshold=0.4,
         seed=SEED,
     )
-    result = run_backtest(
-        targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=0.4
-    )
+    result = run_backtest(targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=0.4)
 
     assert evaluate(result).turnover_per_period == pytest.approx(0.15, rel=0.1)
 
@@ -425,12 +421,8 @@ def test_the_arm_null_keeps_each_instruments_own_signs() -> None:
 
 def per_ticker_turnover(opens: pd.DataFrame, targets: pd.DataFrame) -> dict[str, float]:
     """What each column of a target frame actually realises, in the engine's units."""
-    result = run_backtest(
-        targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=THRESHOLD
-    )
-    return {
-        ticker.ticker: ticker.turnover / len(ticker.position) for ticker in result.per_ticker
-    }
+    result = run_backtest(targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=THRESHOLD)
+    return {ticker.ticker: ticker.turnover / len(ticker.position) for ticker in result.per_ticker}
 
 
 def test_each_column_is_matched_to_its_own_tickers_rate_and_not_the_basket_mean() -> None:
@@ -494,30 +486,19 @@ def test_the_arm_null_matches_each_instruments_own_trading_rate() -> None:
     # AAA changes its mind every fourth session, BBB every twelfth: two rates the
     # basket mean sits between and matches neither of.
     exposures = {
-        **{
-            (day, "AAA"): 0.9 if (index // 4) % 2 else 0.4
-            for index, day in enumerate(days)
-        },
-        **{
-            (day, "BBB"): 0.5 if (index // 12) % 2 else 0.2
-            for index, day in enumerate(days)
-        },
+        **{(day, "AAA"): 0.9 if (index // 4) % 2 else 0.4 for index, day in enumerate(days)},
+        **{(day, "BBB"): 0.5 if (index // 12) % 2 else 0.2 for index, day in enumerate(days)},
     }
     arm = run_backtest(
         targets=pd.DataFrame(
-            {
-                ticker: [exposures[(day, ticker)] for day in days]
-                for ticker in ("AAA", "BBB")
-            },
+            {ticker: [exposures[(day, ticker)] for day in days] for ticker in ("AAA", "BBB")},
             index=opens.index,
         ),
         opens=opens,
         cost_bps=0.0,
         rebalance_threshold=THRESHOLD,
     )
-    wanted = {
-        ticker.ticker: ticker.turnover / len(ticker.position) for ticker in arm.per_ticker
-    }
+    wanted = {ticker.ticker: ticker.turnover / len(ticker.position) for ticker in arm.per_ticker}
     assert wanted["AAA"] != pytest.approx(wanted["BBB"], rel=0.1), "the tickers must differ"
 
     targets = random_arm_targets(

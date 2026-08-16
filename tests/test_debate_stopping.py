@@ -270,9 +270,7 @@ class PartialCaller:
             return AgentReply(signal=FLAT, prompt=rendered, failure=FailureMode.MALFORMED)
         return AgentReply(
             prompt=rendered,
-            signal=Signal(
-                exposure=row[index], confidence=0.6, rationale=f"round {round_index}"
-            ),
+            signal=Signal(exposure=row[index], confidence=0.6, rationale=f"round {round_index}"),
         )
 
 

@@ -87,8 +87,9 @@ def test_a_peer_is_not_the_same_analyst_number_in_every_prompt() -> None:
         return {by_rationale[peer.rationale]: index for index, peer in enumerate(block)}
 
     # Act
-    seen = {tuple(numbering(f"token-{n}")[speaker.model] for speaker in speakers)
-            for n in range(20)}
+    seen = {
+        tuple(numbering(f"token-{n}")[speaker.model] for speaker in speakers) for n in range(20)
+    }
 
     # Assert -- more than one arrangement, and none of them privileged.
     assert len(seen) > 1

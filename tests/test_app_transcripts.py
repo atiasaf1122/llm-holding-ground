@@ -49,12 +49,26 @@ def turns(
     persona = f"{model}-persona"
     return (
         stored(
-            model=model, persona=persona, arm=arm, ticker=TICKER, on=on,
-            round_index=OPENING, exposure=opening, confidence=confidence, rationale=said,
+            model=model,
+            persona=persona,
+            arm=arm,
+            ticker=TICKER,
+            on=on,
+            round_index=OPENING,
+            exposure=opening,
+            confidence=confidence,
+            rationale=said,
         ),
         stored(
-            model=model, persona=persona, arm=arm, ticker=TICKER, on=on,
-            round_index=REBUTTAL, exposure=final, confidence=confidence, rationale=then,
+            model=model,
+            persona=persona,
+            arm=arm,
+            ticker=TICKER,
+            on=on,
+            round_index=REBUTTAL,
+            exposure=final,
+            confidence=confidence,
+            rationale=then,
         ),
     )
 
@@ -203,8 +217,12 @@ def test_a_failed_generation_is_flagged_so_its_placeholder_is_not_read_as_a_view
     frame = frame_of(
         *turns(model="alpha", opening=-0.5, final=0.0)[:1],
         stored(
-            model="alpha", persona="alpha-persona", ticker=TICKER, round_index=REBUTTAL,
-            exposure=0.0, failure="truncated",
+            model="alpha",
+            persona="alpha-persona",
+            ticker=TICKER,
+            round_index=REBUTTAL,
+            exposure=0.0,
+            failure="truncated",
         ),
     )
 

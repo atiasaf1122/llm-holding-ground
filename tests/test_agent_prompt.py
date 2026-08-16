@@ -255,9 +255,7 @@ def test_an_independent_decision_may_not_be_shown_peers() -> None:
 
 def test_a_rebuttal_with_nobody_to_disagree_with_is_refused() -> None:
     with pytest.raises(ValueError, match="at least one peer"):
-        build_prompt(
-            persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, round_index=1
-        )
+        build_prompt(persona=MOMENTUM_BOLD, price_context=CONTEXT, arm=Arm.DEBATE, round_index=1)
 
 
 def test_a_debate_arm_may_not_be_shown_peers_in_its_opening_round() -> None:

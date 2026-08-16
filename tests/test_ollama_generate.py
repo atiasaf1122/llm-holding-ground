@@ -51,9 +51,7 @@ async def test_generate_sends_the_schema_context_size_keep_alive_and_zero_temper
         return httpx.Response(200, json=chat_envelope(json.dumps(SIGNAL_OUTPUT)))
 
     provider = make_provider(handler)
-    await provider.generate(
-        system="persona", user="prices", schema=SIGNAL_SCHEMA, max_tokens=128
-    )
+    await provider.generate(system="persona", user="prices", schema=SIGNAL_SCHEMA, max_tokens=128)
     await provider.aclose()
 
     body = sent[0]
@@ -128,9 +126,7 @@ async def test_generate_flattens_refs_before_sending_the_schema() -> None:
 async def test_generate_reports_the_token_counts_the_daemon_measured() -> None:
     # Decision.output_tokens has no other source: the daemon counts once, in the
     # envelope, and re-deriving it later means running the inference again.
-    provider = make_provider(
-        chat_handler(json.dumps(SIGNAL_OUTPUT), prompt_eval_count=917)
-    )
+    provider = make_provider(chat_handler(json.dumps(SIGNAL_OUTPUT), prompt_eval_count=917))
 
     result = await provider.generate(system="persona", user="prices", schema=SIGNAL_SCHEMA)
     await provider.aclose()

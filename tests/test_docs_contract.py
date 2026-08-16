@@ -728,40 +728,43 @@ def test_the_full_grid_estimate_is_the_arithmetic_the_planner_prices_it_with() -
     # one inference per second and no parallelism -- neither of which the repo's own
     # planner believes. `StagePlan.seconds` divides by parallelism, and
     # `_debate_stage` sets that to the number of distinct base models, which is four
-    # for the full grid.
-    days = 2_048_000 * SECONDS_PER_INFERENCE / 4 / 86_400
-
-    assert pytest.approx(8.9, abs=0.1) == days
+    # for the full grid. The grid total itself is rebuilt from design constants in
+    # the next test; this one holds the planner's pricing conventions.
     assert "one to two weeks" not in text(RESEARCH)
     assert "three and a half weeks" not in text(RESEARCH)
-    assert f"{days:.1f} days" in text(RESEARCH)
     assert "SECONDS_PER_INFERENCE = 1.5" in text(RESEARCH)
     assert "over three weeks of continuous compute" not in text(README)
     assert "over three weeks of continuous generation" not in text(COMPOSITIONS)
 
 
 def test_the_full_grid_estimate_counts_every_arm_the_sweep_runs() -> None:
-    # `compositions.py` was repaired on one side only: it multiplied the
-    # eight-committee figure by the three treatment arms and left the 256-committee
-    # side at one arm's cost, and the README carried the unfixed version with no
-    # per-arm caveat at all. `run_debate_arms` loops over every entry of
-    # `TREATMENT_ARMS`, so the grid this design would actually run costs three times
-    # the quoted figure.
+    # Twice this illustration shipped stale: once multiplied by the arms on one
+    # side of the comparison only, and once written at a one-round cap and three
+    # arms after the design had grown a six-round cap and five -- understating the
+    # grid it was rejecting by a factor of five. So the arithmetic is rebuilt from
+    # the shipped design constants, and a cap or roster change fails here rather
+    # than shipping another stale figure.
+    from council.debate.contra import CONTRA_ROUND_CAP
+    from council.domain.signal import Arm
     from council.planning import TREATMENT_ARMS
 
-    per_arm = 256 * 8 * 1_000
-    full_grid = per_arm * len(TREATMENT_ARMS)
+    cap = get_settings().max_debate_rounds
+    full_length = [arm for arm in TREATMENT_ARMS if arm is not Arm.DEBATE_CONTRADICTOR]
+    per_full_arm = 256 * (4 * (cap + 1)) * 1_000
+    contradictor = 256 * (4 * (CONTRA_ROUND_CAP + 1) + 4 * 3) * 1_000
+    full_grid = per_full_arm * len(full_length) + contradictor
     days = full_grid * SECONDS_PER_INFERENCE / 4 / 86_400
 
-    assert (per_arm, full_grid) == (2_048_000, 6_144_000)
-    assert pytest.approx(26.7, abs=0.1) == days
-    assert "about nine days of continuous compute" not in text(README)
-    assert "**six million inferences**" in text(README)
-    assert "about twenty-seven days of continuous compute" in text(README)
-    assert "about nine\ndays of continuous generation" not in text(COMPOSITIONS)
-    assert "6,144,000" in text(COMPOSITIONS)
-    assert "about\ntwenty-seven\ndays of continuous generation" in text(COMPOSITIONS)
-    # The ratio is unaffected -- both sides of it are per-arm figures -- so it stays.
+    assert (per_full_arm, full_grid) == (7_168_000, 33_792_000)
+    assert pytest.approx(146.7, abs=0.1) == days
+    assert "33,792,000 inferences" in text(RESEARCH)
+    assert "**thirty-four million inferences**" in text(README)
+    assert "hundred and forty-seven" in text(README)
+    assert "6,144,000" not in text(COMPOSITIONS), "the three-arm figure is stale"
+    assert "33,792,000" in text(COMPOSITIONS)
+    assert "hundred and forty-seven" in text(COMPOSITIONS)
+    # The ratio is unaffected -- both sides of it compare like against like -- so it
+    # stays.
     assert "one thirty-second of the compute" in text(README)
 
 

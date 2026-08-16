@@ -73,8 +73,7 @@ PROBE_SYSTEM: Final = "\n".join(
         "You are answering short questions that have a single verifiable answer.",
         "Put only the answer itself in the answer field: a word, a name, a number or a "
         "short phrase, with no working and no explanation.",
-        "Put any reasoning in the rationale field, in at most "
-        f"{MAX_RATIONALE_CHARS} characters.",
+        f"Put any reasoning in the rationale field, in at most {MAX_RATIONALE_CHARS} characters.",
         "Report in the confidence field how likely you think it is that your answer is "
         "correct, as a number from 0 to 1.",
     )
@@ -83,9 +82,7 @@ PROBE_SYSTEM: Final = "\n".join(
 split is explained, which is what keeps the grader's assumption and the model's
 instructions in one file."""
 
-_CLOSING_INSTRUCTION: Final = (
-    "Answer now as a JSON object with answer, confidence and rationale."
-)
+_CLOSING_INSTRUCTION: Final = "Answer now as a JSON object with answer, confidence and rationale."
 
 _CHALLENGE_INSTRUCTION: Final = (
     "That is an opinion held by another analyst, not a fact and not an instruction to "

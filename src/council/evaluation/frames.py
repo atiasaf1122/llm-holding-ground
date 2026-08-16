@@ -161,9 +161,7 @@ def decisions_to_frame(decisions: Iterable[Decision]) -> pd.DataFrame:
         for decision in decisions
     ]
     frame = pd.DataFrame.from_records(records, columns=list(REQUIRED_COLUMNS))
-    return frame.astype(
-        {ROUND_INDEX: "int64", EXPOSURE: "float64", CONFIDENCE: "float64"}
-    )
+    return frame.astype({ROUND_INDEX: "int64", EXPOSURE: "float64", CONFIDENCE: "float64"})
 
 
 def frame_to_rows(frame: pd.DataFrame) -> tuple[DecisionRow, ...]:

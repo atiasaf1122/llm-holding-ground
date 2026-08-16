@@ -278,9 +278,7 @@ def test_evaluate_reports_the_turnover_the_engine_charged_for() -> None:
     opens = pd.DataFrame({"ONE": [100.0] * 6}, index=calendar)
     targets = pd.DataFrame({"ONE": [1.0, 1.0, -1.0, -1.0, -1.0, -1.0]}, index=calendar)
 
-    result = run_backtest(
-        targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=0.05
-    )
+    result = run_backtest(targets=targets, opens=opens, cost_bps=0.0, rebalance_threshold=0.05)
     metrics = evaluate(result)
 
     # In at 1.0, then a flip of 2.0, over five periods.

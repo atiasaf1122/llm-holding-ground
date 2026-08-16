@@ -281,7 +281,10 @@ def test_the_placebo_never_draws_a_later_day() -> None:
         day: select_placebo_point(
             min_gap=0,
             required_seats=COMMITTEE_SIZE,
-            pool=pool, point=(day, TICKER), composition=composition.identifier, seed=SEED
+            pool=pool,
+            point=(day, TICKER),
+            composition=composition.identifier,
+            seed=SEED,
         )
         for day in days[1:]
     }
@@ -301,7 +304,10 @@ def test_a_pool_of_only_later_days_is_refused() -> None:
         select_placebo_point(
             min_gap=0,
             required_seats=COMMITTEE_SIZE,
-            pool=pool, point=(DAY, TICKER), composition=composition.identifier, seed=SEED
+            pool=pool,
+            point=(DAY, TICKER),
+            composition=composition.identifier,
+            seed=SEED,
         )
 
 
@@ -325,14 +331,20 @@ def test_the_placebo_draw_is_reproducible_under_a_fixed_seed() -> None:
 
     # Act
     first = select_placebo_point(
-            min_gap=0,
-            required_seats=COMMITTEE_SIZE,
-        pool=pool, point=point, composition=composition.identifier, seed=SEED
+        min_gap=0,
+        required_seats=COMMITTEE_SIZE,
+        pool=pool,
+        point=point,
+        composition=composition.identifier,
+        seed=SEED,
     )
     second = select_placebo_point(
-            min_gap=0,
-            required_seats=COMMITTEE_SIZE,
-        pool=pool, point=point, composition=composition.identifier, seed=SEED
+        min_gap=0,
+        required_seats=COMMITTEE_SIZE,
+        pool=pool,
+        point=point,
+        composition=composition.identifier,
+        seed=SEED,
     )
 
     # Assert
@@ -387,9 +399,12 @@ def test_a_different_seed_draws_a_different_donor() -> None:
     def draw_all(seed: int) -> tuple[tuple[date, str], ...]:
         return tuple(
             select_placebo_point(
-            min_gap=0,
-            required_seats=COMMITTEE_SIZE,
-                pool=pool, point=(day, TICKER), composition=composition.identifier, seed=seed
+                min_gap=0,
+                required_seats=COMMITTEE_SIZE,
+                pool=pool,
+                point=(day, TICKER),
+                composition=composition.identifier,
+                seed=seed,
             )
             for day in days[1:]
         )
@@ -408,9 +423,12 @@ def test_two_committees_on_one_day_do_not_share_a_donor_by_construction() -> Non
     def draw_all(identifier: str) -> tuple[tuple[date, str], ...]:
         return tuple(
             select_placebo_point(
-            min_gap=0,
-            required_seats=COMMITTEE_SIZE,
-                pool=pool, point=(day, TICKER), composition=identifier, seed=SEED
+                min_gap=0,
+                required_seats=COMMITTEE_SIZE,
+                pool=pool,
+                point=(day, TICKER),
+                composition=identifier,
+                seed=SEED,
             )
             for day in days[1:]
         )
@@ -472,9 +490,7 @@ async def test_a_conversation_longer_than_the_pool_costs_nothing_before_it_is_re
     )
 
     with pytest.raises(ValueError, match="already answered"):
-        await _run(
-            Arm.DEBATE_PLACEBO, caller, pool=pool, rebuttal_rounds=len(OTHER_DAYS) + 1
-        )
+        await _run(Arm.DEBATE_PLACEBO, caller, pool=pool, rebuttal_rounds=len(OTHER_DAYS) + 1)
     assert caller.prompts == [], "the opening round was generated before the refusal"
 
 
@@ -489,7 +505,10 @@ def test_a_pool_holding_only_this_day_is_refused() -> None:
         select_placebo_point(
             min_gap=0,
             required_seats=COMMITTEE_SIZE,
-            pool=pool, point=(DAY, TICKER), composition=composition.identifier, seed=SEED
+            pool=pool,
+            point=(DAY, TICKER),
+            composition=composition.identifier,
+            seed=SEED,
         )
 
 

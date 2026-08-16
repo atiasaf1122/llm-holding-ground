@@ -168,10 +168,11 @@ the same rise reach opposite conclusions, which is the precondition for the expe
 ### Eight committees, not 256
 
 The obvious design assigns each of four models one of four personas in every combination:
-4⁴ = 256 configurations. At eight model calls per debate over a thousand decision points
-that is two million inferences per arm, and across the three treatment arms this design
-runs that is **six million inferences** — about twenty-seven days of continuous compute —
-and most of it is redundant.
+4⁴ = 256 configurations. A conversation at the shipped six-round cap is up to 28 model
+calls, so over a thousand decision points the full grid costs about 28.7 million
+inferences per set of four full-length arms, plus 5.1 million for the contradictor's
+counter-arguments — **thirty-four million inferences**, about a hundred and forty-seven
+days of continuous compute — and most of it is redundant.
 
 Instead, [`debate/compositions.py`](src/council/debate/compositions.py) generates a
 **balanced design**: a Latin square in which every model holds every persona exactly once

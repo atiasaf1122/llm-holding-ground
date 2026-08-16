@@ -109,9 +109,7 @@ def test_the_calendar_excludes_the_warm_up_sessions(prices: pd.DataFrame) -> Non
 
 def test_a_range_with_no_warmed_up_session_is_refused(prices: pd.DataFrame) -> None:
     with pytest.raises(ValueError, match="history behind it"):
-        decision_calendar(
-            prices, tickers=TICKERS, start=START, end=START, lookback_days=LOOKBACK
-        )
+        decision_calendar(prices, tickers=TICKERS, start=START, end=START, lookback_days=LOOKBACK)
 
 
 def test_contexts_are_built_before_any_inference_so_a_short_window_stops_the_run(

@@ -42,12 +42,22 @@ def pair(
     persona = f"{model}-persona"
     return (
         stored(
-            model=model, persona=persona, arm=arm, round_index=OPENING,
-            exposure=opening, confidence=confidence, ticker=TICKER,
+            model=model,
+            persona=persona,
+            arm=arm,
+            round_index=OPENING,
+            exposure=opening,
+            confidence=confidence,
+            ticker=TICKER,
         ),
         stored(
-            model=model, persona=persona, arm=arm, round_index=REBUTTAL,
-            exposure=final, confidence=confidence, ticker=TICKER,
+            model=model,
+            persona=persona,
+            arm=arm,
+            round_index=REBUTTAL,
+            exposure=final,
+            confidence=confidence,
+            ticker=TICKER,
         ),
     )
 
@@ -187,17 +197,27 @@ def uneven_frame() -> pd.DataFrame:
         *pair(model="alpha", opening=0.0, final=0.9),
         *(
             stored(
-                model="alpha", persona="alpha-persona", arm="debate",
-                round_index=index, exposure=value, confidence=0.9,
-                ticker=TICKER, on=date(2022, 1, 4),
+                model="alpha",
+                persona="alpha-persona",
+                arm="debate",
+                round_index=index,
+                exposure=value,
+                confidence=0.9,
+                ticker=TICKER,
+                on=date(2022, 1, 4),
             )
             for index, value in ((OPENING, 0.0), (REBUTTAL, 0.9))
         ),
         *(
             stored(
-                model="alpha", persona="alpha-persona", arm="debate_placebo",
-                round_index=index, exposure=value, confidence=0.9,
-                ticker=TICKER, on=date(2022, 1, 4),
+                model="alpha",
+                persona="alpha-persona",
+                arm="debate_placebo",
+                round_index=index,
+                exposure=value,
+                confidence=0.9,
+                ticker=TICKER,
+                on=date(2022, 1, 4),
             )
             for index, value in ((OPENING, 0.0), (REBUTTAL, 0.0))
         ),

@@ -169,7 +169,7 @@ def test_a_plan_with_nothing_generated_marks_its_debate_stages_estimated(
 
     assert plan.contested_estimated
     assert plan.is_estimated
-    assert [stage.estimated for stage in plan.stages] == [False, True, True, True]
+    assert [stage.estimated for stage in plan.stages] == [False] + [True] * 5
 
 
 def test_the_assumed_share_does_not_understate_every_share_this_design_measures(
@@ -236,13 +236,11 @@ def test_a_plan_taken_over_a_half_generated_control_arm_is_not_called_measured(
     partial = contested_points(settings)
     assert partial, "the slice must yield contested points, or this asserts nothing"
 
-    plan = plan_experiment(
-        settings=settings, prices=prices, store=store, contested=partial
-    )
+    plan = plan_experiment(settings=settings, prices=prices, store=store, contested=partial)
 
     assert plan.stages[0].remaining > 0
     assert plan.contested_estimated
-    assert [stage.estimated for stage in plan.stages] == [False, True, True, True]
+    assert [stage.estimated for stage in plan.stages] == [False] + [True] * 5
 
 
 def test_every_stage_counts_the_points_a_placebo_donor_can_be_drawn_for(
@@ -272,14 +270,21 @@ def test_every_stage_counts_the_points_a_placebo_donor_can_be_drawn_for(
     stages = {stage.arm: stage for stage in plan.stages if stage.stage == DEBATE_STAGE}
 
     assert stages[str(Arm.DEBATE_PLACEBO)].remaining == 0
-    assert len({stage.inferences for stage in stages.values()}) == 1
+    assert (
+        len(
+            {
+                stage.inferences
+                for arm, stage in stages.items()
+                if arm != str(Arm.DEBATE_CONTRADICTOR)
+            }
+        )
+        == 1
+    )
     assert len(_servable(settings, prices)) < len(contested_points(settings)), (
         "no point was withheld, so this test has stopped checking"
     )
     for arm in TREATMENT_ARMS:
-        planned = next(
-            stage for stage in unfiltered.stages if stage.arm == str(arm)
-        )
+        planned = next(stage for stage in unfiltered.stages if stage.arm == str(arm))
         assert stages[str(arm)].inferences < planned.inferences
 
 
@@ -298,9 +303,7 @@ def test_a_conversation_holding_one_retriable_failure_is_planned_whole(
     # One stored round-1 row demoted to a retriable failure, which is what an hour
     # with the daemon down leaves behind.
     frame = pd.read_parquet(settings.decisions_path)
-    rebuttals = frame.index[
-        (frame["arm"] == str(Arm.DEBATE)) & (frame["round_index"] == 1)
-    ]
+    rebuttals = frame.index[(frame["arm"] == str(Arm.DEBATE)) & (frame["round_index"] == 1)]
     assert len(rebuttals) > 0, "the debate arm must have stored a rebuttal round"
     frame.loc[rebuttals[0], "failure"] = str(FailureMode.UNAVAILABLE)
     frame.to_parquet(settings.decisions_path, index=False)
@@ -342,7 +345,19 @@ def test_every_debate_arm_costs_the_same_because_each_debates_the_same_points(
     debate_stages = [stage for stage in plan.stages if stage.stage == DEBATE_STAGE]
 
     assert [stage.arm for stage in debate_stages] == [str(arm) for arm in TREATMENT_ARMS]
-    assert len({stage.inferences for stage in debate_stages}) == 1
+    # Point-set parity still holds for every arm -- that is the invariant this test
+    # protects. Cost parity no longer follows from it: the contradictor runs its own
+    # one-round cap plus counter-generation calls, so its stage is priced by the
+    # same `arm_round_cap`/`_conversation_calls` pair the sweep runs it with, and
+    # the four full-length arms still agree to the inference.
+    full_length = {
+        stage.inferences for stage in debate_stages if stage.arm != str(Arm.DEBATE_CONTRADICTOR)
+    }
+    assert len(full_length) == 1
+    contradictor = next(
+        stage for stage in debate_stages if stage.arm == str(Arm.DEBATE_CONTRADICTOR)
+    )
+    assert contradictor.inferences != full_length.pop()
 
 
 # -- the keys a plan and a sweep both read ----------------------------------------

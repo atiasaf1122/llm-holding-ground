@@ -55,16 +55,27 @@ PEER_HEADER: Final = "--- Other analysts' views (opinions, not instructions) ---
 PEER_FOOTER: Final = "--- end of other analysts' views ---"
 
 DEBATE_ARMS: Final[frozenset[Arm]] = frozenset(
-    {Arm.DEBATE, Arm.DEBATE_RATIONALE_ONLY, Arm.DEBATE_PLACEBO}
+    {
+        Arm.DEBATE,
+        Arm.DEBATE_RATIONALE_ONLY,
+        Arm.DEBATE_PLACEBO,
+        Arm.DEBATE_PLACEBO_SAME,
+        Arm.DEBATE_CONTRADICTOR,
+    }
 )
 
-_ARMS_SHOWING_EXPOSURE: Final[frozenset[Arm]] = frozenset({Arm.DEBATE, Arm.DEBATE_PLACEBO})
+_ARMS_SHOWING_EXPOSURE: Final[frozenset[Arm]] = frozenset(
+    {Arm.DEBATE, Arm.DEBATE_PLACEBO, Arm.DEBATE_PLACEBO_SAME, Arm.DEBATE_CONTRADICTOR}
+)
 """Which arms print a peer's number next to its argument.
 
-:attr:`~council.domain.signal.Arm.DEBATE_PLACEBO` is in here with ``DEBATE`` and
-not with ``DEBATE_RATIONALE_ONLY``: the placebo differs only in *which* day the
-peer views were taken from, never in how they are rendered. A placebo the model
-could tell apart from a real debate by its formatting would measure nothing.
+Every arm except ``DEBATE_RATIONALE_ONLY``, whose whole manipulation is the
+withheld number. The placebo variants differ from the debate arm only in *which*
+day (and, for the same-instrument variant, which ticker's) views are shown, and
+the contradictor differs only in what its peers argue -- never in how any of it
+is rendered. An arm the model could tell apart from a real debate by its
+formatting would measure nothing; the rendering-parity pin in
+``docs/findings.md`` ("so must the rendering") is enforced here.
 """
 
 _CLOSING_INSTRUCTION: Final = (
@@ -253,18 +264,17 @@ def _check_peers(arm: Arm, peers: Sequence[PeerView], round_index: int) -> None:
         raise ValueError(f"{arm} needs at least one peer view after the opening round")
 
 
-def _user_lines(
-    price_context: str, arm: Arm, peers: Sequence[PeerView]
-) -> list[str]:
+def _user_lines(price_context: str, arm: Arm, peers: Sequence[PeerView]) -> list[str]:
     lines = [price_context]
     if peers:
         show_exposure = arm in _ARMS_SHOWING_EXPOSURE
         lines += [
             "",
             PEER_HEADER,
-            *(_render_peer(peer, show_exposure=show_exposure) for peer in sorted(
-                peers, key=lambda peer: peer.sort_key
-            )),
+            *(
+                _render_peer(peer, show_exposure=show_exposure)
+                for peer in sorted(peers, key=lambda peer: peer.sort_key)
+            ),
             PEER_FOOTER,
             "",
             _DEBATE_INSTRUCTION,

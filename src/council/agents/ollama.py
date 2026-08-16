@@ -275,9 +275,7 @@ def _parse_chat_response(
     )
 
 
-def _read_envelope(
-    response: httpx.Response, *, model: str, retries: int = 0
-) -> Mapping[str, Any]:
+def _read_envelope(response: httpx.Response, *, model: str, retries: int = 0) -> Mapping[str, Any]:
     """The envelope, or the malformed failure carrying what it cost.
 
     ``retries`` is carried onto the raised error for the reason
@@ -345,9 +343,7 @@ def _reject_incomplete(
         )
 
 
-def _parse_content(
-    envelope: Mapping[str, Any], *, model: str, retries: int = 0
-) -> dict[str, Any]:
+def _parse_content(envelope: Mapping[str, Any], *, model: str, retries: int = 0) -> dict[str, Any]:
     """The completion object, or the malformed failure carrying what it cost.
 
     ``retries`` is carried for the same reason it is in :func:`_read_envelope`.

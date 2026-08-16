@@ -499,4 +499,48 @@ existing arm splits "wrong day" from "wrong instrument" with no new machinery.
 
 If the coherent contradictor moves agents like the placebo at round 1, the finding is
 about contradiction. If it moves them like the debate arm, the finding is about
-incoherence. It is not run here.
+incoherence.
+
+### The extension arms, as built, and the rule that will read them
+
+*This subsection is written and committed before either arm has generated a row.
+Both arms run on the same 50 decision points as the published run, alongside it in
+the same store, and nothing already published re-runs.*
+
+**`debate_placebo_same_instrument`** is the published placebo with the donor's
+ticker constrained to the reader's. Full protocol otherwise: six-round cap, fresh
+donor per round, numbers rendered. A preflight over the published pool found a
+minimum of 17 same-ticker candidates across all 400 (point, committee) pairs, so
+the constraint costs no coverage.
+
+**`debate_contradictor`** deviates from the sketch above in one declared way: the
+counters are **peer-authored** rather than self-authored --- each of the reader's
+three peers writes the case against the reader's opening view, on the reader's own
+price context, because three self-authored counters would fill three peer slots
+with one model's voice, a rendering difference riding along with the manipulation.
+The opposite side is enforced by the output grammar, not by the prompt (a flat
+reader's contradictor is pushed to a decisive position on a digest-chosen side);
+every counter is archived to `counters.jsonl`; and the arm is capped at **one
+rebuttal round**, because the adjudicating metric below is round 0-to-1 and no
+later-round schedule for a targeted contradiction is defensible.
+
+**The adjudication rule, fixed now.** Rotation stratum, round-0-to-1 shift rate at
+the declared 0.20 bar, paired by decision point through the shipped
+`council.evaluation.intervals.paired_shift_gap`, 5,000 seeded draws:
+
+1. If CI(contradictor − placebo) excludes zero from below while CI(contradictor −
+   debate) contains zero → the placebo's surplus was **incoherence**: coherent
+   opposition moves agents no more than genuine debate.
+2. If CI(contradictor − debate) excludes zero from above while CI(contradictor −
+   placebo) contains zero → **contradiction itself** moves agents, and coherence
+   does not protect against it.
+3. Both exclude zero (the contradictor lands between the arms) → both factors
+   contribute; the two gaps are the decomposition and are reported as such.
+4. Neither excludes zero → inconclusive at this n; reported plainly, no narrative.
+
+For the same-instrument placebo the primary contrast is (same-instrument −
+cross-instrument placebo), same stratum, same machinery: a negative interval
+excluding zero attributes part of the placebo surplus to instrument displacement;
+an interval containing zero says displacement contributed nothing measurable.
+Uniform-stratum and pooled figures will be reported beside these but do not
+adjudicate, for D11's reason.

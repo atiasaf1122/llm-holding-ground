@@ -100,8 +100,7 @@ def test_removing_an_item_nobody_drew_cannot_change_a_single_draw() -> None:
             if drawn[item.identifier] is removed:
                 continue
             assert (
-                select_placebo_donor(item=item, donors=pool, seed=SEED)
-                is drawn[item.identifier]
+                select_placebo_donor(item=item, donors=pool, seed=SEED) is drawn[item.identifier]
             ), f"{item.identifier} moved when {removed.identifier} left"
 
 

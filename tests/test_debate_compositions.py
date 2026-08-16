@@ -82,9 +82,7 @@ def test_every_configuration_has_one_seat_per_model() -> None:
     design = balanced_design(models=MODELS)
 
     # Assert
-    assert all(
-        [seat.model for seat in composition.seats] == list(MODELS) for composition in design
-    )
+    assert all([seat.model for seat in composition.seats] == list(MODELS) for composition in design)
 
 
 def test_identifiers_are_unique_and_name_the_configuration() -> None:

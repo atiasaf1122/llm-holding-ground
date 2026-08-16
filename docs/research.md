@@ -126,9 +126,13 @@ combination: **4⁴ = 256 configurations.**
 The arithmetic that kills it:
 
 ```
-256 configurations x 8 calls per debate x 1,000 decision points
-    = 2,048,000 inferences
-    ~ 8.9 days at council.planning.SECONDS_PER_INFERENCE = 1.5 s with four models
+256 configurations x 28 calls per conversation (4 seats x 7 rounds, the cap-6
+    bound) x 1,000 decision points x 4 full-length arms   = 28,672,000
+256 x 20 x 1,000 for the contradictor arm (its one-round
+    cap, plus 12 counter-argument generations per point)  =  5,120,000
+                                                            ----------
+                                                            33,792,000 inferences
+    ~ 147 days at council.planning.SECONDS_PER_INFERENCE = 1.5 s with four models
       resident (the parallelism StagePlan.seconds applies)
 ```
 

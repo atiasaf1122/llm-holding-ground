@@ -100,9 +100,15 @@ def decisions_frame(
             for model, persona in seats:
                 rows.append(
                     _row(
-                        on=day, ticker=ticker, model=model, persona=persona,
-                        arm="independent", round_index=0, composition=NO_COMPOSITION,
-                        exposure=opening, confidence=0.9,
+                        on=day,
+                        ticker=ticker,
+                        model=model,
+                        persona=persona,
+                        arm="independent",
+                        round_index=0,
+                        composition=NO_COMPOSITION,
+                        exposure=opening,
+                        confidence=0.9,
                     )
                 )
             if index not in DEBATED:
@@ -115,19 +121,21 @@ def decisions_frame(
                         for round_index, exposure in ((0, opening), (1, final)):
                             rows.append(
                                 _row(
-                                    on=day, ticker=ticker, model=seat.model,
-                                    persona=seat.persona.name, arm=arm,
+                                    on=day,
+                                    ticker=ticker,
+                                    model=seat.model,
+                                    persona=seat.persona.name,
+                                    arm=arm,
                                     round_index=round_index,
                                     composition=table.identifier,
-                                    exposure=exposure, confidence=0.9,
+                                    exposure=exposure,
+                                    confidence=0.9,
                                 )
                             )
     return pd.DataFrame(rows, columns=list(DASHBOARD_COLUMNS))
 
 
-def write_run(
-    *, arms: tuple[str, ...] | None = None, committees: int | None = None
-) -> Settings:
+def write_run(*, arms: tuple[str, ...] | None = None, committees: int | None = None) -> Settings:
     """Write both artefacts a finished run leaves behind, where the page will look.
 
     Reads :func:`council.config.get_settings`, so the caller has already pointed

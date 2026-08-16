@@ -29,6 +29,7 @@ from council.agents.runner import GenerationRunner
 from council.agents.store import ConversationKey, DecisionStore
 from council.config import Settings
 from council.debate.compositions import Composition, balanced_design
+from council.debate.protocol import arm_round_cap
 from council.domain.persona import PERSONAS, Persona
 from council.domain.signal import Arm
 from council.evaluation.frames import PointKey
@@ -37,8 +38,14 @@ TREATMENT_ARMS: Final[tuple[Arm, ...]] = (
     Arm.DEBATE,
     Arm.DEBATE_RATIONALE_ONLY,
     Arm.DEBATE_PLACEBO,
+    Arm.DEBATE_PLACEBO_SAME,
+    Arm.DEBATE_CONTRADICTOR,
 )
-"""The three debate arms, in the order a sweep runs them.
+"""The five debate arms, in the order a sweep runs them: the original three,
+then the two extension arms added after the first results were published --
+the same-instrument placebo (D14's decomposition) and the coherent
+contradictor (D8's adjudicator). A resumed sweep skips whatever is complete,
+so extending this tuple re-runs nothing.
 
 Ordered, unlike :data:`council.agents.prompt.DEBATE_ARMS`, because this tuple
 decides the order of the stages in a plan and of the rows in a report, and a set
@@ -275,6 +282,20 @@ def plan_experiment(
     )
 
 
+def _conversation_calls(table: Composition, *, arm: Arm, rebuttal_rounds: int) -> int:
+    """Every model call one conversation costs in this arm, counters included.
+
+    The contradictor's peers each author a counter-argument against each reader
+    before the rebuttal round -- ``size * (size - 1)`` generation calls that are
+    not stored as decision rows and would otherwise be free in the plan and paid
+    on the night.
+    """
+    calls = conversation_rows(composition=table, rebuttal_rounds=rebuttal_rounds)
+    if arm is Arm.DEBATE_CONTRADICTOR:
+        calls += table.size * (table.size - 1)
+    return calls
+
+
 def _debate_stage(
     *,
     arm: Arm,
@@ -296,9 +317,9 @@ def _debate_stage(
     one point set: the caller has already filtered it.
     """
     parallelism = max(len({seat.model for seat in table.seats}) for table in committees)
+    rounds = arm_round_cap(arm, rebuttal_rounds)
     per_point = sum(
-        conversation_rows(composition=table, rebuttal_rounds=rebuttal_rounds)
-        for table in committees
+        _conversation_calls(table, arm=arm, rebuttal_rounds=rounds) for table in committees
     )
     if contested is None:
         return StagePlan(
@@ -324,7 +345,7 @@ def _debate_stage(
             conversation_key(
                 composition=table, arm=arm, decision_date=decision_date, ticker=ticker
             ),
-            conversation_rows(composition=table, rebuttal_rounds=rebuttal_rounds),
+            _conversation_calls(table, arm=arm, rebuttal_rounds=rounds),
         )
         for table in committees
         for decision_date, ticker in contested

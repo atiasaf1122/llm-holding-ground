@@ -390,9 +390,7 @@ def test_a_band_nobody_landed_in_counts_no_points() -> None:
 def test_the_dashboard_no_longer_carries_its_own_copy_of_the_point_count() -> None:
     from council.config import PROJECT_ROOT
 
-    tables = (PROJECT_ROOT / "src" / "council" / "app" / "tables.py").read_text(
-        encoding="utf-8"
-    )
+    tables = (PROJECT_ROOT / "src" / "council" / "app" / "tables.py").read_text(encoding="utf-8")
 
     assert "_points_by_band" not in tables
     assert "band.point_count" in tables

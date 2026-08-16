@@ -74,9 +74,7 @@ class SeatView:
     rationale: str
 
 
-def seated_views(
-    views: Sequence[SeatView], *, composition: Composition
-) -> tuple[SeatView, ...]:
+def seated_views(views: Sequence[SeatView], *, composition: Composition) -> tuple[SeatView, ...]:
     """The views belonging to this committee, in committee order.
 
     The order is taken from the committee rather than from the sequence handed in,
