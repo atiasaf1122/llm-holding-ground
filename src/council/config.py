@@ -221,6 +221,16 @@ class Settings(BaseSettings):
 
     data_dir: Path = PROJECT_ROOT / "data"
 
+    prompts_dir: Path | None = None
+    """Where the persona briefs are read from; ``None`` is the package's own
+    ``agents/prompts/``. The one consumer of an override is the D10 experiment:
+    ``prompts-disposition/`` holds the same four briefs with the stance section
+    voiced as a revisable tendency instead of an identity, and pointing a run at
+    it (with its own ``data_dir``) is how "does de-roleing change the result" is
+    asked without forking the pipeline. Never point the main data directory at an
+    alternate prompts directory: the provenance check rebuilds stored prompts
+    from whatever this names, and a mismatch reads as a corrupted run."""
+
     @property
     def prices_path(self) -> Path:
         return self.data_dir / "prices.parquet"

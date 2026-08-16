@@ -279,3 +279,41 @@ async def test_the_contradictor_without_a_generator_is_refused() -> None:
             caller=MockCaller(),
             seed=7,
         )
+
+
+# -- the disposition prompts (D10's experiment) ------------------------------------
+
+
+def test_the_disposition_briefs_differ_in_the_stance_voice_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The D10 manipulation is one factor: identity phrasing against tendency
+    phrasing. Everything else in the four briefs is byte-identical, so a result
+    difference between the runs cannot be about anything but the voice -- and the
+    loader's cache is keyed by directory, so one process can read both without
+    serving either stale."""
+    from council.agents.prompt import load_persona_brief
+    from council.config import get_settings
+
+    original = {
+        name: load_persona_brief(name)
+        for name in ("momentum-bold", "momentum-cautious", "reversion-bold", "reversion-cautious")
+    }
+
+    monkeypatch.setenv("COUNCIL_PROMPTS_DIR", "src/council/agents/prompts-disposition")
+    get_settings.cache_clear()
+    try:
+        for name, before in original.items():
+            after = load_persona_brief(name)
+            assert after != before
+            assert "tendency you have noticed in yourself" in after
+            assert "not a rule you are bound to" in after
+            # The sections outside the stance voice are untouched.
+            assert (
+                before.split("## How hard you commit")[1]
+                == (after.split("## How hard you commit")[1])
+            )
+    finally:
+        monkeypatch.delenv("COUNCIL_PROMPTS_DIR")
+        get_settings.cache_clear()
+    assert load_persona_brief("momentum-bold") == original["momentum-bold"]

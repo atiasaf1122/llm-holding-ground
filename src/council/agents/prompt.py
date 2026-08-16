@@ -34,6 +34,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, Final
 
+from council.config import get_settings
 from council.domain.persona import Persona
 from council.domain.signal import MAX_RATIONALE_CHARS, Arm, Signal
 
@@ -157,9 +158,8 @@ class RenderedPrompt:
     prompt_hash: str
 
 
-@cache
 def load_persona_brief(name: str) -> str:
-    """Read one persona file.
+    """Read one persona file, from the configured prompts directory.
 
     Args:
         name: a :attr:`~council.domain.persona.Persona.name`, which is also the
@@ -174,7 +174,26 @@ def load_persona_brief(name: str) -> str:
         FileNotFoundError: naming the path, since the usual cause is a persona
             added to the enum without a file to go with it.
     """
-    path = PROMPTS_DIR / f"{name}.md"
+    # Resolved through settings so the D10 experiment can point a run at the
+    # disposition-voiced briefs; `None` -- every ordinary run -- is the package's
+    # own directory. The config docstring carries the warning about mixing an
+    # alternate prompts directory with the main data directory.
+    override = get_settings().prompts_dir
+    return _read_brief(name, PROMPTS_DIR if override is None else Path(override))
+
+
+@cache
+def _read_brief(name: str, prompts_dir: Path) -> str:
+    """The cached read, keyed by directory as well as name.
+
+    The cache used to sit on :func:`load_persona_brief` keyed by name alone,
+    which was correct while there was one directory to read from. With an
+    override in settings, a process that resolves two different directories --
+    a test, a notebook -- would silently serve the first directory's brief under
+    the second's configuration, and every prompt hash downstream would claim a
+    persona nobody rendered.
+    """
+    path = prompts_dir / f"{name}.md"
     try:
         # Text mode, so a CRLF checkout and an LF checkout of the same file
         # produce the same bytes here and therefore the same hash.
