@@ -538,3 +538,137 @@ def test_the_counters_archive_covers_every_contradicted_reader() -> None:
         for row in rows
     }
     assert len(unique) == 4800
+
+
+# -- the extension audit's corrections, and the disposition run --------------------
+
+DISPOSITION = PROJECT_ROOT / "docs" / "results" / "run-disposition" / "decisions.parquet"
+
+
+def test_the_per_protocol_split_reproduces_from_the_counters(published: pd.DataFrame) -> None:
+    """D15's arithmetic: which readers got the described treatment, and what each
+    group did. The join is counters-to-round-0 by identity columns, keeping the
+    last archived line per pair, exactly as the audit and the write-up define it."""
+    import json
+
+    import numpy as np
+
+    rows = [
+        json.loads(line)
+        for line in (DECISIONS.parent / "counters.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    last = {
+        (
+            r["decision_date"],
+            r["ticker"],
+            r["composition"],
+            r["reader_model"],
+            r["reader_persona"],
+            r["author_model"],
+        ): r
+        for r in rows
+    }
+    contradictor = published.loc[
+        (published["arm"] == "debate_contradictor") & (published["round_index"] == 0)
+    ]
+    reader_exposure = {
+        (str(pd.Timestamp(d).date()), t, c, m, p): e
+        for d, t, c, m, p, e in zip(
+            contradictor["decision_date"],
+            contradictor["ticker"],
+            contradictor["composition"],
+            contradictor["model"],
+            contradictor["persona"],
+            contradictor["exposure"],
+            strict=True,
+        )
+    }
+    contaminated = set()
+    sided = violations = 0
+    for key, counter in last.items():
+        reader = reader_exposure.get(key[:5])
+        if reader is None or reader == 0:
+            continue
+        sided += 1
+        if np.sign(counter["exposure"]) == np.sign(reader):
+            violations += 1
+            contaminated.add(key[:5])
+
+    assert sided == 4392 and violations == 278
+
+    records = [
+        {
+            "key": (str(s.decision_date), s.ticker, s.composition, s.model, s.persona),
+            "shifted": s.shifted,
+        }
+        for s in shifts(rows_in_arm(published, Arm.DEBATE_CONTRADICTOR), threshold=0.20)
+    ]
+    frame = pd.DataFrame(records)
+    frame["dirty"] = frame["key"].isin(contaminated)
+    assert int(frame["dirty"].sum()) == 252
+    assert f"{frame.loc[~frame['dirty'], 'shifted'].mean():.3f}" == "0.675"
+    assert f"{frame.loc[frame['dirty'], 'shifted'].mean():.3f}" == "0.238"
+
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split())
+    for figure in ("0.675", "0.238", "15.8%", "6.3%"):
+        assert figure in document, figure
+
+
+def test_the_debate_arms_own_dose_response_reproduces(published: pd.DataFrame) -> None:
+    """The finding that makes the engineered arm almost redundant: full opposition
+    dose inside the genuine debate arm reproduces the contradictor's rate."""
+    import numpy as np
+
+    debate = rows_in_arm(published, Arm.DEBATE)
+    opening = debate.loc[debate["round_index"] == 0]
+    committee_views: dict = {}
+    for d, t, c, m, p, e in zip(
+        pd.to_datetime(opening["decision_date"]).dt.date,
+        opening["ticker"],
+        opening["composition"],
+        opening["model"],
+        opening["persona"],
+        opening["exposure"],
+        strict=True,
+    ):
+        committee_views.setdefault((d, t, c), []).append((m, p, e))
+
+    counts: dict[int, list[int]] = {n: [0, 0] for n in range(4)}
+    for record in shifts(debate, threshold=0.20):
+        if record.prior_exposure == 0:
+            continue
+        peers = [
+            (m, p, e)
+            for (m, p, e) in committee_views[
+                (record.decision_date, record.ticker, record.composition)
+            ]
+            if not (m == record.model and p == record.persona)
+        ]
+        opposing = sum(
+            1 for (_, _, e) in peers if e != 0 and np.sign(e) != np.sign(record.prior_exposure)
+        )
+        counts[opposing][0] += 1
+        counts[opposing][1] += record.shifted
+
+    assert counts[3][0] == 89
+    assert f"{counts[3][1] / counts[3][0]:.3f}" == "0.607"
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split())
+    assert "0.607 (n=89)" in document
+
+
+def test_the_disposition_contrast_reproduces_from_its_own_artefact() -> None:
+    """C31: the de-roleing run's headline contrast, from its pinned parquet."""
+    from council.evaluation.intervals import paired_shift_gap
+
+    disposition = pd.read_parquet(DISPOSITION)
+    assert len(disposition) == 33_572
+    assert int((disposition["failure"] != "none").sum()) == 0
+
+    rotations = disposition.loc[~disposition["composition"].astype(str).str.startswith("uniform")]
+    gap = paired_shift_gap(
+        rotations, minuend_arm="debate_placebo", subtrahend_arm="debate", threshold=0.20
+    )
+    printed = f"[{gap.lower_pp:+.2f}, {gap.upper_pp:+.2f}]"
+    assert printed == "[-0.86, +5.88]"
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split()).replace(MINUS, "-")
+    assert printed in document

@@ -317,3 +317,67 @@ def test_the_disposition_briefs_differ_in_the_stance_voice_alone(
         monkeypatch.delenv("COUNCIL_PROMPTS_DIR")
         get_settings.cache_clear()
     assert load_persona_brief("momentum-bold") == original["momentum-bold"]
+
+
+# -- D15: the side constraint is verified, not trusted -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_counter_that_sides_with_the_reader_is_retried_then_refused(
+    tmp_path: Path,
+) -> None:
+    """The audit finding behind this test: the backend does not enforce numeric
+    schema bounds, 6.3% of the first run's counters agreed with the reader, and
+    the mock never caught it because the mock obeys bounds the real backend
+    ignores. So this mock is scripted to disobey -- agree, agree again -- and the
+    conversation must fail loudly rather than show the reader an agreeing
+    'counter'."""
+    from council.debate.contra import CounterSideError  # noqa: F401 -- the contract exists
+
+    table = committee()
+    agreeing = {"exposure": 0.9, "confidence": 0.8, "rationale": "the reader is right"}
+    providers = {
+        model: MockProvider(model=model, responses=[agreeing])
+        for model in {s.model for s in table.seats}
+    }
+    openings = {seat: SeatView(seat=seat, exposure=0.5, rationale="up") for seat in table.seats}
+
+    with pytest.raises(NoPeersError, match="sided with the reader twice"):
+        await generate_counters(
+            providers=providers,
+            composition=table,
+            point=(DAY, TICKER),
+            price_context="ctx",
+            openings=openings,
+            max_tokens=64,
+            archive=tmp_path / "counters.jsonl",
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_counter_that_recovers_on_the_retry_is_accepted(tmp_path: Path) -> None:
+    from council.debate.contra import counter_opposes
+
+    table = committee()
+    agreeing = {"exposure": 0.9, "confidence": 0.8, "rationale": "agree"}
+    opposing = {"exposure": -0.6, "confidence": 0.7, "rationale": "the opposite reads better"}
+    providers = {
+        model: MockProvider(model=model, responses=[agreeing, opposing])
+        for model in {s.model for s in table.seats}
+    }
+    openings = {seat: SeatView(seat=seat, exposure=0.5, rationale="up") for seat in table.seats}
+
+    counters = await generate_counters(
+        providers=providers,
+        composition=table,
+        point=(DAY, TICKER),
+        price_context="ctx",
+        openings=openings,
+        max_tokens=64,
+        archive=None,
+    )
+
+    for reader, authored in counters.items():
+        assert all(
+            counter_opposes(v.exposure, openings[reader].exposure, token="t") for v in authored
+        )

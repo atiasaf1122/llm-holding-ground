@@ -529,11 +529,13 @@ counters are **peer-authored** rather than self-authored --- each of the reader'
 three peers writes the case against the reader's opening view, on the reader's own
 price context, because three self-authored counters would fill three peer slots
 with one model's voice, a rendering difference riding along with the manipulation.
-The opposite side is enforced by the output grammar, not by the prompt (a flat
-reader's contradictor is pushed to a decisive position on a digest-chosen side);
-every counter is archived to `counters.jsonl`; and the arm is capped at **one
-rebuttal round**, because the adjudicating metric below is round 0-to-1 and no
-later-round schedule for a targeted contradiction is defensible.
+The opposite side was *requested* through the output grammar (a flat reader's
+contradictor is pushed to a decisive position on a digest-chosen side) --- and the
+post-run audit found the backend does not enforce numeric schema bounds at all;
+see D15 in the verdict below. Every counter is archived to `counters.jsonl`; the
+arm is capped at **one rebuttal round**, because the adjudicating metric below is
+round 0-to-1 and no later-round schedule for a targeted contradiction is
+defensible.
 
 **The adjudication rule, fixed now.** Rotation stratum, round-0-to-1 shift rate at
 the declared 0.20 bar, paired by decision point through the shipped
@@ -559,7 +561,7 @@ adjudicate, for D11's reason.
 ### The verdict --- and the number the rule did not imagine
 
 *Everything above this line was committed before the arms ran. This subsection
-reports what they produced: 11,300 decisions, zero generation failures, one
+reports what they produced: 11,296 decisions, zero generation failures, one
 conversation abandoned to a validation error and completed on the resume, every
 counter archived. Artefacts in `docs/results/run-4models-2y/`
 (`counters.jsonl` is an append log; a resume may append a conversation's
@@ -576,47 +578,131 @@ The round-0-to-1 shift rates, all five arms side by side:
 | cross-instrument placebo | 0.383 |
 | **coherent contradictor** | **0.606** |
 
+*(Rates in the table are pooled; every interval quoted below is the
+pre-registered rotation stratum.)*
+
 **The rule's branch 3 fires --- both intervals exclude zero --- but not in the
 way its parenthetical imagined.** Contradictor − placebo is **+23.75pp
-[+20.12, +27.62]** and contradictor − debate is **+26.88pp [+23.12, +30.63]**
-(rotation stratum, as registered). The branch says "the contradictor lands
-between the arms"; it landed **above both**, by twenty points. Reported per the
-rule, with the excess stated rather than absorbed: coherent, unanimous, targeted
-opposition does not move agents *like* the placebo or *like* the debate arm ---
-it moves them nearly **twice as much as either**. 97.6% of the movements go
-*toward* the opposition, and 77.6% of all movements --- 87.0% of those that began
-with a side --- end on the opposite sign outright. Per model: granite4.1
-capitulates on **92.8%** of contradicted decisions, phi4 81.5%, gemma4 40.2%,
-qwen3.5 28.0% (whose contradictor-minus-debate interval, [−0.50, +10.00], is the
-one that does not exclude zero).
+[+20.12, +27.62]** and contradictor − debate is **+26.88pp [+23.12, +30.63]**.
+The branch says "the contradictor lands between the arms"; it landed **above
+both**, by twenty points --- an outcome the rule as written had no branch for,
+reported under the branch whose condition fired. Unanimous targeted opposition
+does not move agents *like* the placebo or *like* the debate arm --- it moves
+them nearly **twice as much as either**. 97.6% of the movements go *toward* the
+opposition; 77.6% of all movements --- 87.0% of those that began with a side ---
+end on the opposite sign, and over all contradicted decisions (movers and
+holders alike) an outright sign reversal occurs on **47.1%**: just under half
+of every decision the arm touched, and just over half (51.4%) of the decisions
+whose readers had a side to reverse.
 
-**And the D14 decomposition rewrites the original headline.** Same-instrument
-minus cross-instrument placebo: **−8.12pp [−11.75, −4.62]** --- the foreign
-instrument was doing real work. More than that: same-instrument placebo minus
-debate is **−5.00pp [−8.12, −1.50]**, *negative*. Once the donor stays on the
-reader's own instrument, the placebo's celebrated surplus over genuine debate
-**reverses** in the rotation stratum. Section 1's defensible +3.12pp was carried
-by the cross-instrument donors. Irrelevant chatter about the right instrument
-moves agents slightly *less* than a real conversation.
+**D15, found by the post-run audit: the side constraint did not hold.** The
+counters' opposite side was written into the output grammar's numeric bounds,
+and the backend turns out not to enforce numeric bounds at all: **6.3% of sided
+counters agreed with the reader**, reaching 15.8% of readers --- who, having
+been shown agreement instead of opposition, shifted at only 0.238. The
+**per-protocol rate --- readers who received the described treatment --- is
+0.675**, above the intent-to-treat 0.606 in the table, so the defect is
+conservative for the headline; but the arm as described was not everywhere the
+arm as delivered, the per-model figures below are per-protocol for that reason
+(intent-to-treat in parentheses), and the test suite missed it because the mock
+provider obeys the bounds the real backend ignores. The generation code now
+verifies the side after decoding and refuses the conversation on a repeat
+offender. Per-protocol per model: granite4.1 **97.8%** (92.8), phi4 **92.0%**
+(81.5), gemma4 42.8% (40.2), qwen3.5 32.2% (28.0). Two of the eight per-model
+intervals do not exclude zero, both qwen's: contradictor−debate [−0.50, +10.00]
+and contradictor−placebo [−1.00, +8.00].
+
+**The cleanest evidence was hiding inside the debate arm all along.** Among
+*genuine* debate readers who happened to face three opposing peers, the shift
+rate is **0.607 (n=89)** --- numerically indistinguishable from the engineered
+arm's 0.606 --- and the dose-response over the number of opposing peers runs
+**0.22 / 0.28 / 0.36 / 0.61** (n = 672/357/390/89, pooled, sided readers).
+Opposition dose, not any property of the engineered counters, is the driver;
+the contradictor arm's contribution is delivering that dose on every decision
+instead of one in eighteen.
+
+**And the D14 decomposition rewrites the original headline --- in the stratum
+that adjudicates.** Same-instrument minus cross-instrument placebo:
+**−8.12pp [−11.75, −4.62]** (rotation; the uniform stratum is null at
+[−5.25, +2.75]) --- the foreign instrument was doing real work. More than that:
+same-instrument placebo minus debate is **−5.00pp [−8.12, −1.50]**, *negative*
+--- in the rotations, which is the registered stratum; pooled it is null
+([−1.31, +3.75]) and in the confounded uniform stratum it is significantly
+positive, which is why the pooled table above shows 0.336 sitting *above*
+0.324. Where the committees genuinely disagree, the placebo's celebrated
+surplus over genuine debate reverses once the donor stays on the reader's own
+instrument: section 1's defensible +3.12pp was carried by the cross-instrument
+donors.
+
+**D16, the caveat under that inversion:** the extension arms were generated
+after a backend update, and their round-0 answers to byte-identical prompts
+disagree with the original arms' on **24.1%** of seat-points (13.7% by at least
+the bar) --- six times the within-run noise floor D12 registered, while the two
+extension arms agree with each other at within-run levels (3.7%). Every
+extension-versus-original comparison is therefore cross-vintage. The ±20pp
+contradictor gaps dwarf it; the −5.00pp inversion does not, and stands as the
+registered stratum's result with this caveat attached rather than as a settled
+fact.
 
 The corrected reading of the whole study, first exchange, one sentence each:
 
 * **Genuine mixed debate barely moves anyone** (0.324) --- because in a real
-  committee, opposition is diluted by agreement.
-* **Irrelevant content moves agents only when it is doubly displaced** --- the
-  original placebo effect shrinks to its foreign-instrument component and then
-  inverts (D8's "incoherence" reading survives only as this component).
-* **Undiluted coherent opposition is the dominant force measured anywhere in
-  this study**: three peers arguing against you, on your data, flips a model
-  more than half the time --- while the same models hold verifiable answers at
-  ~0% under the same mechanism (§4).
+  committee, opposition is diluted by agreement; at full opposition dose inside
+  that same arm, the rate is 0.607.
+* **In the mixed committees, irrelevant content moves agents only when it is
+  doubly displaced** --- the rotation-stratum placebo effect shrinks to its
+  foreign-instrument component and then inverts, under the D16 vintage caveat.
+* **Undiluted opposition is the dominant force measured anywhere in this
+  study**: three peers arguing against you, on your data, moves a model on
+  ~two-thirds of decisions and reverses its sign outright on about half ---
+  while the same models hold verifiable answers at ~0% under the same
+  mechanism (§4).
 
 **What the contradictor arm bundles, stated before anyone quotes it.** Against
-the debate arm it varies three things at once: *unanimity* (every peer opposes,
-where a rotation debate is mixed), *targeting* (the counters address the
-reader's own rationale), and *task framing* (its peers were instructed to argue
-the opposite; debate peers merely state their views). The +26.88pp is the joint
-effect and this design cannot split it. What it does establish, cleanly, is the
-direction D8 asked about: opposition itself --- not incoherence --- is what moves
-these models, and coherence does not protect them; it amplifies. Registered as
-C29/C30, with D8 and D14 updated to point here.
+the debate arm it varies *unanimity*, *targeting* and *task framing* at once;
+against the placebo it additionally varies opposition share (0.935 vs 0.528),
+shown-position extremity (mean |exposure| 0.644 vs 0.266) and distance from the
+reader (1.184 vs 0.745). No comparison in this design varies coherence alone,
+so "coherence amplifies" is **not** claimed --- the licensed statement is
+narrower and still decisive: opposition dose, not incoherence, is what moves
+these models, the debate arm's own dose-response reproduces the entire effect
+without any engineered counter, and a pure shown-number anchoring model was
+tested against the data and fails (it predicts 0.367 where 0.606 is measured;
+within matched pull-size bins the contradictor's excess persists). Registered
+as C29/C30, with D8 and D14 updated to point here.
+
+### The de-roleing run --- D10 adjudicated
+
+*The last registered confound: every persona was an assigned identity ("you are
+a momentum analyst"), so "held its ground" and "stayed in role" fit the same
+rows. The test: the same four briefs with the stance voiced as a revisable
+tendency ("you have tended to read... not a rule you are bound to"), every
+other byte identical, run as its own experiment --- control, debate and placebo
+--- in its own data directory (`data/disposition/`, 33,572 decisions, zero
+failures). Its internal contrasts share one vintage, so D16 does not touch
+them; only its cross-run comparisons carry that caveat.*
+
+The behaviour survives de-roleing:
+
+* **Stance still sets the sign in 15 of 16 (model, persona) cells** --- the one
+  exception is phi4's reversion-cautious drifting to +0.07 --- with magnitudes
+  softened (gemma reversion-bold at −0.51 against the identity run's −0.66).
+* **The arm structure reproduces**: placebo minus debate is +2.45pp
+  [−0.86, +5.88] against the identity run's +3.12pp [+0.25, +6.12] --- same
+  direction, same size, the interval now grazing zero.
+* **Shift rates move up a little, not down**: debate 0.366 (identity 0.324),
+  placebo 0.400 (0.383). Told they may depart from their tendency, the models
+  depart slightly more --- the opposite of what a pure role-discipline account
+  predicts, which would have movement *collapse* once the role stops being an
+  order.
+* **Per model the phrasing cuts both ways**: granite 0.488→0.642 and gemma
+  0.202→0.333 loosen, qwen 0.205→0.076 *tightens*, phi4 barely moves. Even the
+  effect of de-roleing is model-specific.
+
+So D10's worry is bounded rather than realised: the measured behaviour is not
+an artefact of identity phrasing --- the signs, the structure and the orderings
+survive with the role removed --- but phrasing is not inert either, and the
+cross-run rate differences sit inside the D16 vintage caveat. What this run
+licenses: dropping "the models were just obeying their character sheet" as an
+explanation of the headline results. What it does not license: any claim that
+models hold "beliefs".

@@ -109,33 +109,57 @@ C28. **At the conversation's end the round-1 ordering inverts -- in the mixed
     **79.4%**, placebo **80.1%** -- the fixed-rendering pair (debate vs placebo)
     moves churn 9.6pp on content, the fixed-content pair (debate vs rationale-only)
     8.9pp on rendering; the three cells cannot rank the two factors.
-C29. **Undiluted coherent opposition is the dominant mover measured anywhere in
-    this study.** The contradictor arm -- three peers, each arguing against the
-    reader's opening view on the reader's own price context, positions rendered,
-    opposite side enforced by the output grammar, one rebuttal round -- produces a
-    round-0-to-1 shift rate of **0.606** against debate's 0.324 and the placebo's
-    0.383. Both pre-registered intervals exclude zero from above: contradictor
-    minus placebo **+23.75pp [+20.12, +27.62]**, contradictor minus debate
-    **+26.88pp [+23.12, +30.63]** (rotation stratum). 97.6% of the movements go
-    toward the opposition; 77.6% of all movements (87.0% of those that began
-    with a side) end on the opposite sign outright. Per model: granite4.1
-    92.8%, phi4 81.5%, gemma4 40.2%, qwen3.5 28.0% -- qwen's contradictor-minus-
-    debate interval [-0.50, +10.00] is the one of eight that does not exclude
-    zero. The arm bundles unanimity, targeting and task framing against the debate
-    comparison and cannot split them (stated in findings); what it establishes is
-    D8's direction: opposition, not incoherence, is what moves these models, and
-    coherence amplifies rather than protects. The same models capitulate at ~0%
-    on verifiable answers under the same challenge mechanism (C12).
+C29. **Undiluted opposition is the dominant mover measured anywhere in this
+    study.** The contradictor arm -- three peers, each arguing against the
+    reader's opening view on the reader's own price context, positions
+    rendered, one rebuttal round -- produces a round-0-to-1 shift rate of
+    **0.606 intent-to-treat, 0.675 per protocol** (the grammar-enforcement
+    defect D15 left 15.8% of readers shown at least one agreeing "counter";
+    they shifted at 0.238, so the defect is conservative for the headline)
+    against debate's 0.324 and the placebo's 0.383. Both pre-registered
+    intervals exclude zero from above: contradictor minus placebo **+23.75pp
+    [+20.12, +27.62]**, contradictor minus debate **+26.88pp [+23.12, +30.63]**
+    (rotation stratum; rates pooled). 97.6% of movements go toward the
+    opposition; 77.6% of movements (87.0% of sided movers) end on the opposite
+    sign, and an outright sign reversal occurs on 47.1% of all contradicted
+    decisions -- 51.4% of those whose readers had a side. Per model, per
+    protocol (intent-to-treat in parentheses): granite4.1 **97.8%** (92.8),
+    phi4 **92.0%** (81.5), gemma4 42.8% (40.2), qwen3.5 32.2% (28.0). **Two**
+    of the eight per-model intervals do not exclude zero, both qwen's:
+    contradictor-debate [-0.50, +10.00] and contradictor-placebo
+    [-1.00, +8.00]. The decisive internal check needs no engineered arm at all:
+    genuine debate readers who happened to face three opposing peers shifted at
+    **0.607 (n=89)**, with a dose-response of 0.22 / 0.28 / 0.36 / 0.61 over
+    opposing-peer count -- and a pure shown-number anchoring model fails
+    (predicts 0.367 where 0.606 is measured). The arm bundles unanimity,
+    targeting and task framing against the debate comparison, and opposition
+    share, extremity and distance against the placebo; no comparison varies
+    coherence alone, so "coherence amplifies" is not claimed. What is: D8's
+    direction -- opposition dose, not incoherence, moves these models, while
+    the same models capitulate at ~0% on verifiable answers (C12).
 C30. **The original placebo surplus decomposes into its foreign-instrument
-    component -- and then inverts.** Same-instrument placebo shift rate 0.336;
-    minus the cross-instrument placebo, **-8.12pp [-11.75, -4.62]** (rotation),
-    negative in all four models separately and significant in three. Minus the
-    debate arm, **-5.00pp [-8.12, -1.50]**: with the donor held to the reader's
-    own instrument, irrelevant content moves agents *less* than a genuine
-    conversation, so C8's rotation-stratum +3.12pp was carried by the
-    cross-instrument donors D14 counted. C8 stands as the record of the
-    first-published comparison; this is what it measures once the D14 factor is
-    held at zero.
+    component -- and, in the registered stratum, inverts.** Same-instrument
+    placebo shift rate 0.336 pooled; minus the cross-instrument placebo,
+    **-8.12pp [-11.75, -4.62]** in the rotations (uniform: null), negative in
+    all four models separately and significant in three. Minus the debate arm,
+    **-5.00pp [-8.12, -1.50]** rotation -- pooled null [-1.31, +3.75], uniform
+    significantly positive -- so the claim is a rotation-stratum claim, as
+    D11's reasoning requires, and C8's +3.12pp there was carried by the
+    cross-instrument donors D14 counted. **Read under D16**: the inversion is a
+    cross-vintage comparison and is comparable in size to that unquantified
+    drift, so it stands as the registered stratum's result with the caveat
+    attached, not as settled fact.
+C31. **The behaviour survives de-roleing (D10 adjudicated).** The disposition
+    run -- identical briefs with the stance voiced as a revisable tendency,
+    own control and own debate/placebo arms, 33,572 decisions, zero failures,
+    one vintage internally -- reproduces the structure: stance sets the sign in
+    15 of 16 cells, placebo minus debate is +2.45pp [-0.86, +5.88] against the
+    identity run's +3.12pp [+0.25, +6.12], and shift rates move slightly *up*
+    (debate 0.366 vs 0.324) where a pure role-discipline account predicts
+    collapse. Per model the phrasing cuts both ways (granite loosens to 0.642,
+    qwen tightens to 0.076). Licensed: the headline results are not an artefact
+    of identity phrasing. Not licensed: any claim about "beliefs". Cross-run
+    rate comparisons carry D16.
 
 C9. **The declared-bar null on withholding peers' numbers is the zero-crossing of a
     sign-changing dose-response, not the absence of an effect.** Debate minus
@@ -306,8 +330,11 @@ D9. `buy_and_hold` is an equal-weight basket rebalanced on the same calendar as 
     on one seed and 8.8pp on another. The name overstates how passive the benchmark is
     and has not been changed.
 
-D10. **The study cannot tell defending a position from staying in character, and this
-    is the deepest of the open confounds.** Every agent is *instructed* into its view
+D10. **ADJUDICATED by the disposition run -- see C31: the behaviour survives
+    de-roleing, so this confound is bounded rather than realised.** The
+    original statement, kept as the record: the study cannot tell defending a
+    position from staying in character, and this
+    is the deepest of the open confounds. Every agent is *instructed* into its view
     -- "you read price moves as momentum", "you read them as overshoot". So when a seat
     does not move, two readings fit equally: it holds a conclusion it reached, or it
     obeys a standing instruction. C23 makes the problem sharper rather than softer:
@@ -374,6 +401,30 @@ D14. **MEASURED by the extension run -- see C30: the displacement this defect
     regime is talking past the reader, not merely disagreeing -- and C6's
     anonymisation means the reader has no way to notice: no ticker, date or price
     level reaches it.
+
+D15. **The contradictor's grammar constraint did not hold, and the mock could
+    not have caught it.** The opposite side was written into the output
+    grammar's numeric ``minimum``/``maximum``, the backend does not enforce
+    numeric bounds, and 6.3% of sided counters agreed with the reader --
+    reaching 15.8% of readers, whose shift rate (0.238) confirms they received
+    a different treatment. Conservative for the headline (per-protocol 0.675 >
+    published 0.606) but the mechanism sentence shipped false, per-model rates
+    mixed treated and untreated denominators, and the defect was invisible to
+    the test suite because MockProvider obeys schema bounds the real backend
+    ignores -- a mock more obedient than reality validates the wrong world.
+    Fixed by post-decoding verification with one retry and a loud refusal
+    (`contra.CounterSideError`), tested with a mock scripted to disobey.
+
+D16. **The extension arms are a different generation vintage than the arms they
+    are compared against.** Their round-0 answers to byte-identical prompts
+    disagree with the original run's on 24.1% of seat-points (13.7% at the
+    bar) -- six times D12's within-run floor -- while agreeing with each other
+    at within-run levels (3.7%). Cause: backend updates between the runs.
+    Every extension-versus-original contrast is cross-vintage; the ±20pp
+    contradictor gaps dwarf the drift, the -5.00pp inversion (C30) does not
+    and carries the caveat inline. No same-vintage re-run of an original arm
+    exists to control for it; the disposition run's internal contrasts are
+    single-vintage and unaffected.
 
 ### Superseded defects, retained for provenance
 

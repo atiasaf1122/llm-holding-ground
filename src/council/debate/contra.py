@@ -22,12 +22,19 @@ sketch in findings.md put it -- would fill three peer slots with one style, a
 rendering difference riding along with the manipulation. The deviation from
 the sketch is deliberate and this paragraph is its record.
 
-**The opposite side is enforced by the schema, not requested by the prompt.**
-A model asked to argue against a long position can drift back to agreeing with
-it; a grammar whose ``exposure`` bounds exclude the reader's side cannot. A
-flat reader has no opposite side, so the counter is pushed to a decisive
-position on a side chosen by digest parity -- deterministic, and balanced
-across the run rather than within a committee.
+**The opposite side is requested by the schema and enforced by validation.**
+The first run trusted the grammar alone -- ``exposure`` bounds excluding the
+reader's side -- and an audit then found the backend does not enforce numeric
+``minimum``/``maximum`` at all: 6.3% of that run's counters agreed with the
+reader, reaching 15.8% of readers (D15; the direction of the headline was
+conservative -- clean readers shifted at 0.675 against the published 0.606 --
+but the described treatment was not the delivered one, and the mock provider
+never caught it because the mock obeys bounds the real backend ignores). So
+the constraint is now verified after generation: a counter on the reader's own
+side is retried once and then fails the conversation loudly. A flat reader has
+no opposite side, so the counter is pushed to a decisive position on a side
+chosen by digest parity -- deterministic, and balanced across the run rather
+than within a committee.
 
 **Every counter is archived.** The counter text a reader saw exists nowhere in
 the decision rows -- only the reader's own output is stored -- and at
@@ -156,6 +163,53 @@ def counter_user_prompt(
     )
 
 
+class CounterSideError(ValueError):
+    """A generated counter sits on the reader's own side.
+
+    Its own class rather than a bare ValueError so the caller can tell "the
+    model agreed instead of opposing" from every other way a draw can fail --
+    and because it exists as the audit trail of D15: the grammar was trusted to
+    make this impossible, and it was not.
+    """
+
+
+def counter_opposes(counter_exposure: float, reader_exposure: float, *, token: str) -> bool:
+    """Whether a counter actually landed in the range the schema requested."""
+    low, high = opposite_bounds(reader_exposure, token=token)
+    return low <= counter_exposure <= high
+
+
+async def _opposed_signal(
+    provider: Provider,
+    *,
+    user: str,
+    schema: Mapping[str, Any],
+    max_tokens: int | None,
+    reader_exposure: float,
+    token: str,
+) -> Signal:
+    """Generate a counter and verify its side, retrying once.
+
+    One retry, not more: at temperature zero a second identical request usually
+    reproduces the first answer, but the D12-measured regeneration noise gives
+    a genuine second draw often enough to be worth one attempt before the
+    conversation is abandoned -- and unbounded retries against a model that has
+    decided to agree would spin forever.
+    """
+    for attempt in (0, 1):
+        completion = await provider.generate(
+            system=_SYSTEM, user=user, schema=schema, max_tokens=max_tokens
+        )
+        signal = Signal.model_validate(completion.data)
+        if counter_opposes(signal.exposure, reader_exposure, token=token):
+            return signal
+        if attempt == 0:
+            continue
+    raise CounterSideError(
+        f"exposure {signal.exposure:+.2f} sides with the reader's {reader_exposure:+.2f}"
+    )
+
+
 async def generate_counters(
     *,
     providers: Mapping[str, Provider],
@@ -208,15 +262,24 @@ async def generate_counters(
                 continue
             provider = providers[author.model]
             try:
-                completion = await provider.generate(
-                    system=_SYSTEM, user=user, schema=schema, max_tokens=max_tokens
+                signal = await _opposed_signal(
+                    provider,
+                    user=user,
+                    schema=schema,
+                    max_tokens=max_tokens,
+                    reader_exposure=opening.exposure,
+                    token=token,
                 )
-                signal = Signal.model_validate(completion.data)
             except (ProviderError, ValidationError) as failure:
                 raise NoPeersError(
                     f"counter-argument by {author.model} against {reader.model} at "
                     f"{day} {ticker} failed: {failure}"
                 ) from failure
+            except CounterSideError as agreed_instead:
+                raise NoPeersError(
+                    f"counter-argument by {author.model} against {reader.model} at "
+                    f"{day} {ticker} sided with the reader twice: {agreed_instead}"
+                ) from agreed_instead
             authored.append(
                 SeatView(seat=author, exposure=signal.exposure, rationale=signal.rationale)
             )
