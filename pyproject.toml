@@ -11,6 +11,10 @@ dependencies = [
     "numpy>=2.0",
     "pandas>=2.2",
     "pyarrow>=17.0",
+    # data/fetch.py is a pipeline step, not an optional tool: a clone that
+    # cannot fetch the prices cannot reproduce the study. Undeclared until CI's
+    # first clean-room install exposed it.
+    "yfinance>=0.2",
 ]
 
 [project.optional-dependencies]

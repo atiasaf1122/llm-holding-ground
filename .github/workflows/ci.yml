@@ -14,7 +14,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: uv sync --frozen || uv sync
+        # Both extras: the tests import the dashboard layer (app) and the gates
+        # themselves are in dev. The first CI run failed for want of exactly
+        # this line, and took an undeclared yfinance dependency down with it.
+        run: uv sync --frozen --extra dev --extra app
       - name: Ruff
         run: uv run ruff check src tests
       - name: Mypy (strict)
