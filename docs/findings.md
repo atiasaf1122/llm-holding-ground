@@ -584,7 +584,8 @@ between the arms"; it landed **above both**, by twenty points. Reported per the
 rule, with the excess stated rather than absorbed: coherent, unanimous, targeted
 opposition does not move agents *like* the placebo or *like* the debate arm ---
 it moves them nearly **twice as much as either**. 97.6% of the movements go
-*toward* the opposition and 77.6% cross the sign outright. Per model: granite4.1
+*toward* the opposition, and 77.6% of all movements --- 87.0% of those that began
+with a side --- end on the opposite sign outright. Per model: granite4.1
 capitulates on **92.8%** of contradicted decisions, phi4 81.5%, gemma4 40.2%,
 qwen3.5 28.0% (whose contradictor-minus-debate interval, [−0.50, +10.00], is the
 one that does not exclude zero).

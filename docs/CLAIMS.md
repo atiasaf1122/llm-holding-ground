@@ -117,7 +117,8 @@ C29. **Undiluted coherent opposition is the dominant mover measured anywhere in
     0.383. Both pre-registered intervals exclude zero from above: contradictor
     minus placebo **+23.75pp [+20.12, +27.62]**, contradictor minus debate
     **+26.88pp [+23.12, +30.63]** (rotation stratum). 97.6% of the movements go
-    toward the opposition and 77.6% cross the sign outright. Per model: granite4.1
+    toward the opposition; 77.6% of all movements (87.0% of those that began
+    with a side) end on the opposite sign outright. Per model: granite4.1
     92.8%, phi4 81.5%, gemma4 40.2%, qwen3.5 28.0% -- qwen's contradictor-minus-
     debate interval [-0.50, +10.00] is the one of eight that does not exclude
     zero. The arm bundles unanimity, targeting and task framing against the debate
