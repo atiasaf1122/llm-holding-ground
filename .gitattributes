@@ -10,3 +10,14 @@
 # explicit "\n" so two runs of one configuration are byte-identical on any
 # platform, and LF normalisation is what keeps that true through a checkout.
 *.jsonl text eol=lf
+
+# The artefacts are evidence, not source. Without this, GitHub's language bar is
+# computed over 3.3MB of archived counter-arguments and reports the repository as
+# mostly JSON -- a reader scanning the front page would see the study's outputs
+# and conclude the code was an afterthought. They stay tracked, diffable and
+# recomputed by the tests; they are just excluded from the language statistics.
+docs/results/** linguist-generated=true
+
+# Documentation, likewise: findings.md and CLAIMS.md are long, and prose is not
+# the language this project is written in.
+docs/*.md linguist-documentation=true

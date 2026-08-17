@@ -1,0 +1,41 @@
+name: Challenge a claim
+description: A numbered claim in docs/CLAIMS.md overreaches its evidence, or a confound is uncontrolled.
+title: "[claim] "
+labels: ["claim-challenge"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every claim in [`docs/CLAIMS.md`](../blob/master/docs/CLAIMS.md) is either backed by
+        an artefact in this repository or marked as not backed. Two of the claims here were
+        rewritten after exactly this kind of challenge.
+  - type: input
+    id: claim
+    attributes:
+      label: Which claim
+      description: Its identifier, e.g. C29. If the problem is a figure with no claim behind it, say where it appears.
+      placeholder: C29
+    validations:
+      required: true
+  - type: textarea
+    id: overreach
+    attributes:
+      label: What the claim says, and what the evidence actually supports
+      description: Quote the sentence. Then say what a reader would be entitled to conclude instead.
+    validations:
+      required: true
+  - type: textarea
+    id: rival
+    attributes:
+      label: The rival explanation, if there is one
+      description: >-
+        What else could produce this result? If you know a design that would separate your
+        explanation from the one claimed, describe it — that is how the contradictor arm
+        came to be built.
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before opening
+      options:
+        - label: I checked whether this is already in the defect register (D1 to D17)
+          required: true

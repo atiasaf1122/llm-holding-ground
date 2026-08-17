@@ -67,7 +67,7 @@ is not fully discharged for that one seat.
 
 ---
 
-## 3. Why four arms and not two
+## 3. Why four arms and not two --- and the two that had to be added
 
 The observation the experiment collects is simple: **an agent changed its answer
 after reading a peer.** The trouble is that four different things produce that
@@ -78,7 +78,24 @@ observation, and only one of them is persuasion.
 | **independent** | nothing | the control |
 | **debate** | peers' rationales **and** exposures | the treatment |
 | **rationale only** | rationales, **with the peer's stated exposure removed** | **anchoring on a peer's stated position** |
-| **placebo** | rationales **from an unrelated day** (and possibly another instrument) | **compliance** |
+| **placebo** | rationales **from an unrelated day** (49% of donors on the other instrument) | **the argument's content** --- *not* compliance; see below |
+
+The last cell is the one this section got wrong, and the record of that is the
+point of keeping it. The placebo was designed to remove **compliance** --- moving
+because one is contradicted rather than because of what is said. It does not: a
+donor-day argument is not merely irrelevant, it is *incoherent* against the data
+the reader holds, and half the time it is about a different instrument entirely
+(D8, D14). So it bounds what the argument's **content** contributes and leaves
+"reacting to being contradicted" and "reacting to an argument that cannot be
+reconciled" welded together.
+
+**Two arms were added later to separate them**, with their adjudication rule
+committed before either generated a row: a **same-instrument placebo**, which
+holds the donor on the reader's own ticker and so isolates instrument
+displacement from day displacement, and a **coherent contradictor**, whose three
+peers argue against the reader's own view on the reader's own data. The verdict
+is C29 and C30; the arms as built are documented in `docs/methods.md`, and the
+cost arithmetic in section 4 below already prices all five debate arms.
 
 **Anchoring.** Agent A says +0.8, agent B says -0.2, both end at +0.3. Did they
 convince each other, or did they split the difference because a number was on the
@@ -97,8 +114,8 @@ number would then have to be described completely differently.
 part of the stored schema and why the peer rendering is one code path. The placebo
 needs a donor at least `placebo_min_gap_sessions` back, and one distinct donor per
 round the cap allows, so there are contested points it cannot answer. Those points are
-withheld from **all three** arms rather than from the placebo alone: the three answer
-an identical set, and a debate-minus-placebo difference is a difference in treatment
+withheld from **all** the debate arms rather than from the placebo alone: the five
+answer an identical set, and a debate-minus-placebo difference is a difference in treatment
 rather than partly a difference in which days each arm saw. What the filter costs the
 experiment is the start of the calendar. On the published run: 10 of the 60 sampled
 points, all in the first sixty sessions. (Unsampled, the same gap costs the first 60
@@ -226,8 +243,9 @@ not vacuous — it is simply not applied there, and what it would save there has
 never been measured, because the sweep has never been run per committee.
 
 That gap is not bookkeeping. A uniform committee is handed points on which its own four
-seats agreed, debates them anyway, and reaches `agreement_spread` within two rounds
-92% of the time. Read without the per-committee share, that looks like four agents
+seats agreed, debates them anyway, and in the debate arm reaches `agreement_spread` in
+92% of its conversations at a mean of 1.94 rounds --- 68% at 3.06 rounds once the peers'
+numbers are hidden. Read without the per-committee share, that looks like four agents
 persuading each other quickly. It is four agents who never disagreed.
 
 ---
@@ -325,6 +343,34 @@ demonstrate its absence, because a description specific enough to be useful may 
 specific enough to recognise. The remaining defence is a window from *after* the
 models' training cutoff: there, there is nothing to recall. If the result survives
 there, leakage was not driving it.
+
+### What this section did not anticipate
+
+Both threats above are threats to *inference*, and both were designed against in
+advance. The three defects that did the most damage were none of these. They were
+threats to the **instrument**, and each was invisible from inside the run that
+carried it:
+
+* **The instrument did not do what it was documented to do.** The contradictor
+  arm's opposite side was written into the output grammar's numeric bounds, and
+  the backend does not enforce numeric bounds; 6.3% of counters agreed with the
+  reader (D15). The test suite could not see it, because the mock provider
+  obeyed the bound the real backend ignored --- a mock more obedient than
+  reality validates the wrong world.
+* **The instrument changed between measurements.** Model tags are republished
+  under the same name, so the extension arms answer from a different generation
+  vintage than the arms they are compared against --- 24.1% round-0 disagreement
+  on byte-identical prompts, six times the within-run floor (D16). Nothing in
+  the design pins a vintage, and nothing in the artefacts records one.
+* **Part of the instrument was never in the repository.** An unanchored ignore
+  pattern kept the price fetch out of every commit while the dependency it needs
+  was declared, so a clone could install the study and not contain its first
+  step (D17). Every test passed, because tests run where the file is present.
+
+The generalisation worth carrying out of this project: **a control is only as
+good as the evidence that it was applied.** Verify a constraint after the fact,
+record what version produced each measurement, and check what the repository
+contains rather than what the working directory does.
 
 ---
 

@@ -6,6 +6,14 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .coverage
-data/*.parquet
-data/*.jsonl
-data/
+
+# The run's working directory, at the repository root only.
+#
+# Anchored, because an unanchored `data/` matches a directory of that name at
+# every depth -- and this repository has one: `src/council/data/`, the price
+# pipeline. That is how `data/fetch.py` sat untracked while `pyproject.toml`
+# declared the dependency it needs, so a clone could install the study and not
+# contain the step that downloads its input. Published artefacts live in
+# `docs/results/` and are tracked deliberately; this pattern is only about the
+# scratch directory a run writes into.
+/data/

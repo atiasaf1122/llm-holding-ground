@@ -1,11 +1,16 @@
-"""``python -m council`` -- the six things a developer actually does.
+"""``python -m council`` -- the seven things a developer actually does.
 
+``prices`` fetches the real daily bars everything downstream is computed over,
 ``plan`` costs a configuration without running it, ``generate`` sweeps the
-independent arm, ``debate`` runs the three treatment arms over the contested
-points, ``evaluate`` scores what is on disk, and ``dryrun`` does all four in that
+independent arm, ``debate`` runs the treatment arms over the contested points,
+``evaluate`` scores what is on disk, and ``dryrun`` does the middle four in that
 order on synthetic prices and the mock provider with no GPU at all. ``probe`` is
 the odd one out: it runs the capitulation probe, which shares the provider and the
 prompt conventions but touches no prices, no dates and no tickers.
+
+``prices`` is the only one that reaches the network, and the only one a dry run
+does not rehearse -- which is how it came to be missing entirely. Everything
+downstream silently falls back to a random walk without it.
 
 They are separate subcommands rather than flags on one because they are separated
 in time. Generation is an overnight job; evaluation is a question asked repeatedly
@@ -42,6 +47,7 @@ from council.agents.runner import (
 )
 from council.agents.store import DecisionStore
 from council.config import Settings, get_settings
+from council.data.fetch import fetch_prices
 from council.data.prices import write_prices
 from council.debate.sweep import run_debate_arms
 from council.evaluation.aggregation import RULES
@@ -62,6 +68,11 @@ EXIT_OK: Final = 0
 EXIT_FAILURE: Final = 1
 
 RESULTS_FILENAME: Final = "results.json"
+
+RAW_PRICES_FILENAME: Final = "prices-raw.csv"
+"""The vendor's response, verbatim, beside the parquet built from it. Vendors
+revise history, so without it a rerun that disagrees with the published series
+cannot be told from a study that was wrong."""
 
 LOG_LEVELS: Final[tuple[str, ...]] = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
@@ -352,6 +363,49 @@ def do_probe(args: argparse.Namespace, out: TextIO) -> int:
     return _generation_exit(len(run.turns), run.failures)
 
 
+def do_prices(args: argparse.Namespace, out: TextIO) -> int:
+    """Fetch the real daily bars the study runs on, and pin the vendor's response.
+
+    The first step of the pipeline and, until now, the only one with no command.
+    :func:`~council.data.fetch.fetch_prices` existed and nothing called it, while
+    :func:`~council.pipeline.load_or_synthesise_prices` *silently* falls back to a
+    random walk when ``prices.parquet`` is absent -- so a stranger following the
+    documented path got a complete set of results computed over prices no market
+    ever produced, with nothing in the output saying so (D17).
+
+    Refuses to overwrite an existing table unless asked. The alternative is a
+    rerun quietly replacing the series a published parquet was scored against,
+    on a vendor that revises history.
+    """
+    settings = settings_from(args)
+    if settings.prices_path.is_file() and not args.force:
+        print(
+            f"{settings.prices_path} already exists; pass --force to refetch. "
+            "The vendor revises history, so a refetch may not reproduce it.",
+            file=out,
+        )
+        return EXIT_FAILURE
+
+    prices = fetch_prices(
+        tickers=settings.tickers,
+        start=settings.start,
+        end=settings.end,
+        lookback_days=settings.lookback_days,
+        raw_path=settings.data_dir / RAW_PRICES_FILENAME,
+    )
+    written = write_prices(prices, settings.prices_path)
+    sessions = prices["date"].nunique()
+    span = f"{prices['date'].min().date()}..{prices['date'].max().date()}"
+    print(
+        f"{len(prices)} bars over {sessions} sessions ({span}) "
+        f"for {', '.join(settings.tickers)}",
+        file=out,
+    )
+    print(f"written to {written}", file=out)
+    print(f"vendor response pinned at {settings.data_dir / RAW_PRICES_FILENAME}", file=out)
+    return EXIT_OK
+
+
 def do_dryrun(args: argparse.Namespace, out: TextIO) -> int:
     """The whole pipeline, on synthetic prices and the mock provider.
 
@@ -497,6 +551,17 @@ def build_parser() -> argparse.ArgumentParser:
     common = _common()
     generating = _generating()
     subcommands = parser.add_subparsers(dest="command", required=True)
+
+    prices = subcommands.add_parser(
+        "prices", parents=[common], help="fetch the real daily bars and pin the response"
+    )
+    prices.add_argument(
+        "--force",
+        action="store_true",
+        help="refetch over an existing table; the vendor revises history, so this "
+        "may not reproduce the series a published run was scored against",
+    )
+    prices.set_defaults(handler=do_prices)
 
     plan = subcommands.add_parser("plan", parents=[common], help="cost a configuration")
     plan.add_argument("--seconds-per-inference", type=float, default=SECONDS_PER_INFERENCE)

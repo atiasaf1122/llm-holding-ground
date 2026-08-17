@@ -7,9 +7,11 @@ repository has, and the reason no result below is stated as holding at another. 
 daily bars for AAPL and XOM, split and dividend adjusted, decisions
 on the 501 sessions from 2022-01-03 to 2023-12-29. Four models (`qwen3.5:9b`,
 `granite4.1:8b`, `phi4:14b`, `gemma4:12b`), four personas, eight committees --- four
-Latin-square rotations and four uniform references. **40,968 stored decisions, zero
+Latin-square rotations and four uniform references. **40,968 stored decisions in the
+four original arms, 11,296 more in the two extension arms --- 52,264 in all, zero
 generation failures.** The debate arms ran on 50 decision points sampled evenly across
-the two years, giving 1,200 conversations.
+the two years, giving 1,200 conversations in the three original arms and 2,000 across
+all five.
 
 The core figures below --- the shift table, the pooled rates, the headline and
 endpoint intervals, and the calibration numbers --- are recomputed by
@@ -432,7 +434,7 @@ of them:
 Architecture moves the magnitude. The persona decides the sign. That is the
 precondition the design was built on (C2) and it holds without exception.
 
-**The four arms' returns must not be read as a test of anything.** The debate arms
+**The arms' returns must not be read as a test of anything.** The debate arms
 differ from the control on 50 of 1,002 decision points, because the debate was sampled
 to fit the machine. A comparison that thin would look like this whether or not an
 effect existed. The behavioural measurements are unaffected --- each is computed per
@@ -462,7 +464,7 @@ per committee, the picture is completely different:
 
 The gate as it ships skips 1.8% of points. A committee-level gate would skip 41%.
 
-Nothing here is invalidated by that --- all four arms run on one identical point set, so
+Nothing here is invalidated by that --- all five debate arms run on one identical point set, so
 every comparison holds --- but "contested" describes the grid, not the committee that
 debates. A uniform committee spends most of its budget arguing about points it never
 disagreed on, which is exactly what section 3 shows it doing.
@@ -678,9 +680,11 @@ a momentum analyst"), so "held its ground" and "stayed in role" fit the same
 rows. The test: the same four briefs with the stance voiced as a revisable
 tendency ("you have tended to read... not a rule you are bound to"), every
 other byte identical, run as its own experiment --- control, debate and placebo
---- in its own data directory (`data/disposition/`, 33,572 decisions, zero
-failures). Its internal contrasts share one vintage, so D16 does not touch
-them; only its cross-run comparisons carry that caveat.*
+--- in its own data directory (33,572 decisions, zero failures; the artefact is
+pinned at `docs/results/run-disposition/decisions.parquet`, which is what the
+doc tests recompute this section from). Its internal contrasts share one
+vintage, so D16 does not touch them; only its cross-run comparisons carry that
+caveat.*
 
 The behaviour survives de-roleing:
 

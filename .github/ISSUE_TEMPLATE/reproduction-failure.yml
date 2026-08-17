@@ -1,0 +1,40 @@
+name: Reproduction failure
+description: A published number does not reproduce from the artefacts in this repository.
+title: "[repro] "
+labels: ["reproduction-failure"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every published figure is recomputed from `docs/results/` by
+        `tests/test_docs_findings.py`, on CPU, with no model server and no network. If that
+        suite is green and a number still disagrees with what you compute, that is a defect.
+  - type: input
+    id: figure
+    attributes:
+      label: Which number
+      description: The document, the section, and the figure as printed.
+      placeholder: "findings.md, verdict section, contradictor shift rate 0.606"
+    validations:
+      required: true
+  - type: textarea
+    id: computed
+    attributes:
+      label: What you computed, and how
+      description: The value you got, and the code you got it with, so the difference can be located rather than guessed at.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: suite
+    attributes:
+      label: Output of the test suite
+      description: "`uv run pytest -q`, so a failure in the environment can be told from a failure in the numbers."
+      render: shell
+  - type: markdown
+    attributes:
+      value: |
+        **Note on re-running the experiment.** A fresh generation run disagreeing with the
+        published series is expected, not a defect: the backend drifts between versions and
+        vendors revise price history. That is registered as D16 and D12. This template is for
+        the artefacts in the repository failing to yield the numbers printed from them.

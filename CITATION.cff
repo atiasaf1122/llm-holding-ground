@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: >-
+  If you refer to this study, its code or its artefacts, please cite the
+  repository using the metadata below. No DOI has been minted; cite the release
+  tag, or the commit hash if you are referring to a specific state of the tree.
+title: "Council: a placebo-controlled study of whether language models hold their ground"
+abstract: >-
+  Four open-weight models judge the same market question independently, then
+  again in committee. A placebo arm feeds each reader a real peer argument about
+  an unrelated day, and a coherent-contradictor arm feeds it three peers arguing
+  against its own view on its own data, so that reacting to an argument can be
+  separated from reacting to being contradicted. The finding is that opposition
+  dose, not argument content, predicts whether an agent abandons its position --
+  reproduced independently inside the genuine debate arm's own dose-response --
+  and that the same models almost never capitulate on questions with verifiable
+  answers. The repository carries the pre-registration, every decision artefact,
+  a register of 31 numbered claims and 17 defects including the ones that
+  falsified its own headlines, and tests that recompute each published figure
+  from the artefacts.
+type: software
+authors:
+  - given-names: Asaf
+    family-names: Atia
+    email: atiasaf@gmail.com
+repository-code: "https://github.com/atiasaf1122/llm-holding-ground"
+url: "https://github.com/atiasaf1122/llm-holding-ground"
+version: "1.0.0"
+date-released: "2026-08-17"
+license: MIT
+keywords:
+  - large-language-models
+  - multi-agent-systems
+  - sycophancy
+  - reproducible-research
+  - preregistration
+  - placebo-control
+  - llm-evaluation
+identifiers:
+  - type: url
+    value: "https://github.com/atiasaf1122/llm-holding-ground/releases/tag/v1.0.0"
+    description: The release these results were produced at.

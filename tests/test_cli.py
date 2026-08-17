@@ -83,6 +83,50 @@ def _short_lookback(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     get_settings.cache_clear()
 
 
+# -- prices -----------------------------------------------------------------------
+
+
+def test_prices_writes_the_table_and_pins_the_vendors_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The step that had no command until D17, and the reason it mattered: with no
+    price table, every command downstream falls back to a random walk in silence."""
+    served = synthetic_prices(tickers=tuple(TICKERS), sessions=40)
+
+    def fake_fetch(*, raw_path: Path | None = None, **_: object) -> pd.DataFrame:
+        if raw_path is not None:
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_path.write_text("vendor,response\n", encoding="utf-8")
+        return served
+
+    monkeypatch.setattr("council.cli.fetch_prices", fake_fetch)
+
+    code, output = run("prices", data_dir=tmp_path)
+
+    assert code == EXIT_OK
+    assert load_prices(tmp_path / "prices.parquet").shape == served.shape
+    assert (tmp_path / "prices-raw.csv").is_file(), "the vendor's response was not pinned"
+    assert "written to" in output
+
+
+def test_prices_refuses_to_overwrite_a_published_table_unasked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A vendor revises history. A refetch that silently replaced the series a
+    published parquet was scored against would leave no way to tell the revision
+    from an error."""
+    write_prices(synthetic_prices(tickers=tuple(TICKERS), sessions=40), tmp_path / "prices.parquet")
+    monkeypatch.setattr(
+        "council.cli.fetch_prices",
+        lambda **_: pytest.fail("the existing table was refetched over"),
+    )
+
+    code, output = run("prices", data_dir=tmp_path)
+
+    assert code == EXIT_FAILURE
+    assert "--force" in output
+
+
 # -- plan -------------------------------------------------------------------------
 
 

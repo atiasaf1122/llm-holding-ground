@@ -16,9 +16,10 @@ make the result **checkable without trusting anyone**. Nothing here is decoratio
 
 **Why four families at one size.** Architecture is a factor in the experiment; at
 mixed sizes, "model effect" is partly "scale effect". The choice paid off as a
-finding: capitulation under unanimous opposition ranges from 28% (qwen3.5) to
-92.8% (granite4.1) — there is no such thing as "how a language model behaves",
-only how a specific model behaves.
+finding: the shift rate under unanimous targeted opposition ranges from 32.2%
+(qwen3.5) to 97.8% (granite4.1) per protocol — 28.0% to 92.8% intent-to-treat,
+a denominator that mixes treated and untreated readers (D15). There is no such
+thing as "how a language model behaves", only how a specific model behaves.
 
 **Why both cards are required.** A debate round is four seats answering
 simultaneously, so all four models must be resident at once; they do not fit on
@@ -29,16 +30,21 @@ memory-bandwidth-bound: four concurrent requests gave ×1.5 over sequential (not
 ## Constrained decoding
 
 Every reply is forced through a JSON Schema compiled to a token-level grammar
-(`format` in Ollama): the model **cannot** emit anything but
-`{exposure, confidence, rationale}` within bounds. Two hard-won rules:
+(`format` in Ollama): the model cannot emit anything but the
+`{exposure, confidence, rationale}` object, with its **string** fields bounded.
+Two hard-won rules, the second of them learned the expensive way:
 
 * Every string field is bounded. An unbounded field is a hole in the grammar; a
   model with more to say pours everything into it — measured once at 82,000
   tokens of broken JSON.
-* The grammar is also an experimental instrument: in the contradictor arm the
-  `exposure` bounds exclude the reader's side, so a peer instructed to argue the
-  opposite **cannot drift back into agreement**. A constraint in the grammar
-  cannot be talked out of; a constraint in the prompt can.
+* **Numeric `minimum`/`maximum` are not enforced by the backend at all**, and
+  this study used them as an experimental instrument before finding out. The
+  contradictor arm set `exposure` bounds excluding the reader's side and
+  described the result as a peer that *cannot* drift back into agreement; 6.3%
+  of sided counters agreed with the reader anyway, reaching 15.8% of readers
+  (D15). A structural constraint in the grammar holds. A numeric one is a
+  request, and must be verified after decoding — which is what
+  `contra.CounterSideError` now does, with one retry and then a refusal.
 
 ## Data
 
@@ -74,7 +80,7 @@ arm holds all but one factor fixed:
 | rationale-only | rationales, positions withheld | numeric anchoring |
 | placebo | a real committee's views from an unrelated day (49% the other instrument) | content at all |
 | same-instrument placebo | unrelated day, **same instrument** | day-displacement vs instrument-displacement (D14) |
-| coherent contradictor | three peers arguing **against the reader** on the reader's own data | pure opposition (D8) |
+| coherent contradictor | three peers arguing **against the reader** on the reader's own data (side requested through the grammar, not enforced by it — D15) | opposition **dose**; it bundles unanimity, targeting and framing, so not coherence alone (D8, C29) |
 
 Rendering is one code path for all arms — an arm distinguishable by its
 formatting measures nothing. Peers are anonymous handles in a deterministic
@@ -100,15 +106,21 @@ data window cannot overlap the decision's.
 ## Reliability
 
 * **Checkpoint + resume** per (committee, arm, ticker) group; a resumed run
-  reads `stop_reason` and skips what is finished. Survived two mid-run Ollama
-  auto-updates at the cost of minutes, not nights.
+  reads `stop_reason` and skips what is finished. Survived the mid-sweep Ollama
+  auto-update recorded in C25 (0.32.5 → 0.32.6) at the cost of minutes rather
+  than a night. A further backend change *between* the original and extension
+  runs is the source of the D16 vintage drift, which no resume can repair.
 * **Three retry layers**: transport (backoff on 5xx), envelope (a daemon
   restarted mid-response — 3 re-sends), command (up to 5 relaunches).
 * **A failure is a datum**: recorded with its `FailureMode`, never dropped.
   Observed rate on the published run: 0 of 52,264.
 * **MockProvider** honours schema bounds, so the entire test suite and the full
   pipeline (`council dryrun`) run in seconds with no GPU — which is also what CI
-  runs on every push.
+  runs on every push. That obedience is itself a registered defect (D15): the
+  mock honoured numeric bounds the real backend ignores, so the contradictor's
+  side constraint passed every test and failed in production. A mock more
+  obedient than reality validates the wrong world, and the mock is now scripted
+  to disobey wherever the contract under test is a bound.
 
 ## Measurement
 
@@ -132,12 +144,15 @@ data window cannot overlap the decision's.
   commit; the extension arms' adjudication rule committed *before* they
   generated a row — and when the result landed outside every branch the rule
   imagined, it was reported under the rule with the excess stated.
-* **CLAIMS.md**: 30 numbered claims, 14 registered defects — including the ones
-  that killed our own headline findings. A claim is either backed by an artefact
-  in the repository or it is marked as not.
+* **CLAIMS.md**: 31 numbered claims, 17 registered defects (11 live entries plus
+  D2–D7 retained for provenance) — including the ones that killed our own
+  headline findings. A claim is either backed by an artefact in the repository
+  or it is marked as not.
 * **Doc-contract tests**: `tests/test_docs_findings.py` recomputes the published
   tables and intervals from `docs/results/run-4models-2y/decisions.parquet`; a
   published number that drifts from the artefact fails the suite.
-* **Five rounds of adversarial review** (independent referee passes) changed the
-  headline finding twice and caught the authors misremembering their own design
-  once. All of it is in the registers.
+* **Six rounds of adversarial review** (independent referee passes) changed the
+  headline finding twice, caught the authors misremembering their own design
+  once, and on the sixth pass falsified a mechanism sentence the whole test
+  suite had endorsed (D15) plus a pipeline module that had never been committed
+  (D17). All of it is in the registers.

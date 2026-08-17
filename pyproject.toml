@@ -17,6 +17,14 @@ dependencies = [
     "yfinance>=0.2",
 ]
 
+# `council <subcommand>`, which is how the documents have always spelled it -- and
+# for the whole study they were wrong, because nothing declared the entry point and
+# only `python -m council` worked. Same callable either way: cli.main returns an exit
+# code rather than calling sys.exit, so a subcommand stays callable from a test
+# without spawning a process.
+[project.scripts]
+council = "council.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",

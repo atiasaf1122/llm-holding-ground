@@ -26,7 +26,7 @@ C1. The four arms (independent / debate / rationale-only / placebo) each bound a
     peer wrote into its own prose reaches the reader unchanged (see D1). The placebo
     additionally requires a donor `placebo_min_gap_sessions` back, and one distinct
     donor per round the cap allows; the points it cannot serve are withheld from all
-    three treatment arms, so the three cover one identical set and the shortfall is
+    five debate arms, so the five cover one identical set and the shortfall is
     against the independent control rather than between the arms. On this run that
     shortfall is 10 of 60 sampled points, all in the first sixty sessions.
 C2. The stance axis (momentum vs reversion) is necessary because an aggression-only
@@ -214,7 +214,7 @@ C14. **The dispersion gate is measured on the wrong unit, and this is the first 
     `dispersion_threshold = 0.25` it is **4,728 of 8,016 (59.0%)**, ranging from
     **19.0%** (uniform-reversion-bold) to **98.5%** (rotation-3). So the gate as
     applied skips 1.8% of points and a committee-level gate would skip 41%. Nothing in
-    this run is invalidated by that -- all four arms are run on one identical point set,
+    this run is invalidated by that -- all five debate arms are run on one identical point set,
     so the comparisons hold -- but "contested" describes the grid and not the committee
     that debates, and a uniform committee is frequently debating a point it never
     disagreed about.
@@ -280,8 +280,9 @@ C27. **That confidence predicts *holding* is NOT claimed, and the raw correlatio
 ## About the process
 
 C16. All three quality gates pass: pytest, ruff, mypy strict.
-C17. Zero generation failures across the whole run -- 40,968 decisions, no malformed
-     output, no truncation, no unreachable backend recorded on any stored row.
+C17. Zero generation failures across the whole run -- 52,264 decisions (40,968 in the
+     four original arms, 11,296 in the two extension arms), no malformed output, no
+     truncation, no unreachable backend recorded on any stored row.
 C18. The primary comparison, `shift_threshold` and `dispersion_threshold` were fixed
      in the first commit (`afce0ae`), before any result existed. The four other
      bounds `config.py` declares -- `agreement_spread`, `stillness_rounds`,
@@ -350,7 +351,7 @@ D10. **ADJUDICATED by the disposition run -- see C31: the behaviour survives
 
     Addressable without a new design: state the persona as a disposition the agent may
     revise ("you have tended to read moves as momentum") rather than as an identity,
-    and run the two phrasings as a factor. Not run here.
+    and run the two phrasings as a factor. Run: see C31.
 
 D11. **The uniform stratum's placebo contrast confounds relevance with agreement.**
     In a uniform committee the "real debate" peers hold the reader's own persona and
@@ -425,6 +426,23 @@ D16. **The extension arms are a different generation vintage than the arms they
     and carries the caveat inline. No same-vintage re-run of an original arm
     exists to control for it; the disposition run's internal contrasts are
     single-vintage and unaffected.
+
+D17. **The price fetch was never in the repository.** `.gitignore` carried an
+    unanchored `data/`, meant for the run's working directory at the root; it
+    matched `src/council/data/` as well, so `fetch.py` -- the step that
+    downloads the real series every number in the study is computed over -- was
+    excluded from every commit, while `pyproject.toml` declared the `yfinance`
+    dependency that exists only to serve it. A clone could install the study
+    and not contain its first step. Invisible to the entire suite, to CI and to
+    a full-run rehearsal, because all of them run where the file is present;
+    only the index knew. Found by inventory rather than by a test, which is the
+    point: the class of defect here is *absence*, and nothing that reads the
+    working tree can see it. Fixed by anchoring the pattern to `/data/` and
+    committing the module; a test now compares `git ls-files src` against the
+    files on disk, so a source file outside the index fails the suite. It also
+    means the module shipped without a test of its own until now -- refusals
+    for a short history, a holed session and disagreeing calendars are covered
+    in `tests/test_data_fetch.py`, all against a stubbed vendor.
 
 ### Superseded defects, retained for provenance
 
