@@ -217,7 +217,7 @@ class DebateReport:
     """Contested points withheld from **every** arm for want of a placebo donor.
 
     Points, not conversations: the number is decided once for the whole sweep by
-    :func:`servable_points` and is the same for all three arms by construction,
+    :func:`servable_points` and is the same for every treatment arm by construction,
     which is the entire purpose of it. It is reported rather than logged because an
     experiment that quietly answers fewer questions than it was asked is
     indistinguishable, in every other output, from one that answered all of them.
@@ -518,7 +518,7 @@ def servable_points(
     differenced against, and "debate minus placebo" would be part manipulation and
     part calendar.
 
-    So the filter is applied to all three arms alike. What it withholds is counted
+    So the filter is applied to every treatment arm alike. What it withholds is counted
     rather than logged away: :func:`run_debate_arms` puts the number on its report
     and the command line prints it. An experiment that quietly shrinks is the
     failure this function exists to prevent, and a silent version of it would look

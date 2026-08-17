@@ -21,7 +21,11 @@ jobs:
       - name: Ruff
         run: uv run ruff check src tests
       - name: Mypy (strict)
-        run: uv run mypy src
+        # No path argument: `files` in pyproject is the declared scope, and it
+        # includes the tests. Naming `src` here silently narrowed the gate to
+        # half of what the project says it checks, and 25 type errors
+        # accumulated in the tests where nothing was looking.
+        run: uv run mypy
       - name: Tests
         # The whole suite runs on the mock provider: no daemon, no GPU, no
         # network. That is a design property of the project, not a CI trick --

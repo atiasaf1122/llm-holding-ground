@@ -15,6 +15,7 @@ number they qualify.
 from __future__ import annotations
 
 import re
+from datetime import date
 
 import pandas as pd
 import pytest
@@ -263,6 +264,7 @@ def test_the_calibration_figures_are_the_ones_the_artefact_holds(
     minus_sign = "−"  # noqa: RUF001 -- the document really does use U+2212
     assert f"{report.scored_count:,}" in document, "the sample size drifted"
     assert f"{report.correlation:+.3f}".replace("+", "") in document.replace(minus_sign, "-")
+    assert report.hit_rate is not None, "the calibration report carried no hit rate"
     assert f"{report.hit_rate * 100:.1f}%" in document
 
 
@@ -621,7 +623,7 @@ def test_the_debate_arms_own_dose_response_reproduces(published: pd.DataFrame) -
 
     debate = rows_in_arm(published, Arm.DEBATE)
     opening = debate.loc[debate["round_index"] == 0]
-    committee_views: dict = {}
+    committee_views: dict[tuple[date, str, str], list[tuple[str, str, float]]] = {}
     for d, t, c, m, p, e in zip(
         pd.to_datetime(opening["decision_date"]).dt.date,
         opening["ticker"],

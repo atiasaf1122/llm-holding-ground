@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from types import ModuleType
@@ -59,41 +60,46 @@ def vendor_frame(
         )
 
     frame = pd.DataFrame(blocks)
-    frame.columns = pd.MultiIndex.from_tuples(frame.columns)
+    frame.columns = pd.MultiIndex.from_tuples(tuple(blocks))
     return frame
 
 
+@dataclass
+class Vendor:
+    """The stubbed vendor: what it was asked for, and what it will answer with."""
+
+    calls: list[dict[str, object]]
+    served: list[pd.DataFrame]
+
+    def serve(self, frame: pd.DataFrame) -> None:
+        """Answer the next call with this response instead."""
+        self.served[0] = frame
+
+
 @pytest.fixture
-def vendor(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+def vendor(monkeypatch: pytest.MonkeyPatch) -> Vendor:
     """Install a stub ``yfinance`` and record the calls made to it.
 
     The module imports the vendor inside the function, so the stub has to live in
     ``sys.modules`` rather than be passed in -- and the recorded calls are what
     lets the padding test assert on a request that was never sent to a server.
     """
-    calls: list[dict] = []
-    served: list[pd.DataFrame] = [vendor_frame()]
+    stubbed = Vendor(calls=[], served=[vendor_frame()])
 
     def download(symbols: list[str], **kwargs: object) -> pd.DataFrame:
-        calls.append({"symbols": symbols, **kwargs})
-        return served[0]
+        stubbed.calls.append({"symbols": symbols, **kwargs})
+        return stubbed.served[0]
 
-    stub = ModuleType("yfinance")
-    stub.download = download  # type: ignore[attr-defined]
-    stub.serve = served  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "yfinance", stub)
-    return calls
-
-
-def serve(vendor_calls: list[dict], frame: pd.DataFrame) -> None:
-    """Point the stub at a different response."""
-    sys.modules["yfinance"].serve[0] = frame  # type: ignore[attr-defined]
+    module = ModuleType("yfinance")
+    module.download = download  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "yfinance", module)
+    return stubbed
 
 
 # -- the happy path ----------------------------------------------------------------
 
 
-def test_a_clean_response_becomes_this_projects_price_schema(vendor: list[dict]) -> None:
+def test_a_clean_response_becomes_this_projects_price_schema(vendor: Vendor) -> None:
     prices = fetch_prices(tickers=TICKERS, start=START, end=END)
 
     assert list(prices.columns) == ["date", "ticker", "open", "high", "low", "close", "volume"]
@@ -102,18 +108,18 @@ def test_a_clean_response_becomes_this_projects_price_schema(vendor: list[dict])
     assert prices.equals(prices.sort_values(["ticker", "date"], ignore_index=True))
 
 
-def test_the_lookback_is_fetched_before_the_first_decision_date(vendor: list[dict]) -> None:
+def test_the_lookback_is_fetched_before_the_first_decision_date(vendor: Vendor) -> None:
     """The failure this prevents is silent: without the padding the earliest
     decisions have no trailing window, and the study quietly starts later than
     the date it reports starting."""
     fetch_prices(tickers=TICKERS, start=START, end=END, lookback_days=60)
 
-    requested_start = date.fromisoformat(str(vendor[0]["start"]))
+    requested_start = date.fromisoformat(str(vendor.calls[0]["start"]))
     assert requested_start < START - pd.Timedelta(days=60).to_pytimedelta()
 
 
 def test_the_vendors_response_is_pinned_for_provenance(
-    vendor: list[dict], tmp_path: Path
+    vendor: Vendor, tmp_path: Path
 ) -> None:
     """Vendors revise history. Without the raw bytes, a rerun that disagrees with
     the published series cannot be told from a study that was wrong."""
@@ -127,29 +133,29 @@ def test_the_vendors_response_is_pinned_for_provenance(
 # -- the refusals ------------------------------------------------------------------
 
 
-def test_an_empty_response_raises_rather_than_returning_nothing(vendor: list[dict]) -> None:
-    serve(vendor, pd.DataFrame())
+def test_an_empty_response_raises_rather_than_returning_nothing(vendor: Vendor) -> None:
+    vendor.serve(pd.DataFrame())
 
     with pytest.raises(ValueError, match="no bars returned"):
         fetch_prices(tickers=TICKERS, start=START, end=END)
 
 
-def test_a_history_that_starts_late_is_refused(vendor: list[dict]) -> None:
-    serve(vendor, vendor_frame(sessions=pd.bdate_range(date(2022, 1, 6), END)))
+def test_a_history_that_starts_late_is_refused(vendor: Vendor) -> None:
+    vendor.serve(vendor_frame(sessions=pd.bdate_range(date(2022, 1, 6), END)))
 
     with pytest.raises(ValueError, match="after the requested start"):
         fetch_prices(tickers=TICKERS, start=START, end=END)
 
 
-def test_a_history_that_ends_early_is_refused(vendor: list[dict]) -> None:
+def test_a_history_that_ends_early_is_refused(vendor: Vendor) -> None:
     stale = END - pd.Timedelta(days=MAX_TRAILING_GAP_DAYS + 1).to_pytimedelta()
-    serve(vendor, vendor_frame(sessions=pd.bdate_range(START, stale)))
+    vendor.serve(vendor_frame(sessions=pd.bdate_range(START, stale)))
 
     with pytest.raises(ValueError, match="before the requested end"):
         fetch_prices(tickers=TICKERS, start=START, end=END)
 
 
-def test_an_end_date_that_falls_on_a_closed_market_is_accepted(vendor: list[dict]) -> None:
+def test_an_end_date_that_falls_on_a_closed_market_is_accepted(vendor: Vendor) -> None:
     """The ordinary case, and the one a naive freshness check refuses: a range
     ending on a weekend has its last bar days earlier by definition."""
     last_session = pd.bdate_range(START, END)[-1].date()
@@ -161,16 +167,14 @@ def test_an_end_date_that_falls_on_a_closed_market_is_accepted(vendor: list[dict
     assert not prices.empty
 
 
-def test_tickers_on_disagreeing_calendars_are_refused(vendor: list[dict]) -> None:
+def test_tickers_on_disagreeing_calendars_are_refused(vendor: Vendor) -> None:
     """A basket priced on a day one leg was shut carries a position nobody could
     have held, and the backtest books its return anyway."""
     shared = pd.bdate_range(START, END)
-    serve(
-        vendor,
-        vendor_frame(
+    vendor.serve(vendor_frame(
             per_ticker_sessions={
                 "AAPL": shared,
-                "XOM": shared.drop(shared[3]),
+                "XOM": shared.drop([shared[3]]),
             }
         ),
     )
@@ -205,10 +209,14 @@ def test_every_pipeline_module_is_under_version_control() -> None:
         pytest.skip("not a git checkout")
 
     tracked = {root / line for line in listed.stdout.splitlines()}
+    # Not just ``*.py``: the prompts are markdown, the probe corpus is JSON, and
+    # `py.typed` is empty. All of them are shipped in the wheel and all of them
+    # would fail exactly the way fetch.py did -- silently, and only for someone
+    # who did not write them.
     on_disk = {
         path
-        for path in (root / "src").rglob("*.py")
-        if "__pycache__" not in path.parts
+        for path in (root / "src").rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts
     }
     missing = sorted(str(path.relative_to(root)) for path in on_disk - tracked)
-    assert not missing, f"source files excluded from the repository: {missing}"
+    assert not missing, f"files under src/ excluded from the repository: {missing}"

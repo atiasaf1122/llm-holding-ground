@@ -50,7 +50,7 @@ def calendar_pool() -> PlaceboPool:
     return placebo_pool(committee(), days=CALENDAR)
 
 
-def is_servable(pool: PlaceboPool, point: PointKey, *, rounds: int = 1, **gap: int) -> bool:
+def is_servable(pool: PlaceboPool, point: PointKey, *, rounds: int = 1, **gap: Any) -> bool:
     """Whether the real draw would serve every round rather than raise at one of them."""
     try:
         for round_index in range(1, rounds + 1):

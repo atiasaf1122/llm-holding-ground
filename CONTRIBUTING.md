@@ -21,9 +21,12 @@ actually supports. Claims C8, C29 and C30 have all been rewritten this way alrea
 `tests/test_docs_findings.py`, and the suite runs on CPU with no model server:
 
 ```bash
-uv sync --frozen --extra dev
+uv sync --frozen --extra dev --extra app
 uv run pytest
 ```
+
+Both extras, not just `dev`: the suite imports the dashboard layer, so `dev` alone fails at
+collection rather than at a test.
 
 If that suite is green on your machine and a number in the documents still disagrees with
 what you compute from `docs/results/`, that is a defect worth an issue. Include what you

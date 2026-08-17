@@ -240,6 +240,41 @@ def test_consolidating_twice_changes_nothing(store: DecisionStore) -> None:
     assert store.decisions_path.read_bytes() == first
 
 
+def test_consolidating_with_nothing_to_merge_does_not_rewrite_the_artefact(
+    store: DecisionStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reading a finished run must not touch its bytes.
+
+    Every read path in the project calls ``consolidate``, so an unconditional
+    rewrite meant that merely *inspecting* a published run re-serialised its
+    parquet. The frame compares equal either way, which is why the byte
+    comparison in the test above passes: pandas is deterministic within one
+    machine. Across the versions a reader actually has, it is not -- the
+    published artefact's checksum changed under `council evaluate`, and
+    `git status` reported a modified evidence file to anyone who looked at one.
+    So the assertion is that no write is attempted at all, not that the bytes
+    happen to match.
+    """
+    store.checkpoint(
+        model="qwen3:8b",
+        persona="momentum-bold",
+        ticker="AAPL",
+        decisions=[make_decision()],
+        completions=[],
+    )
+    store.consolidate()
+
+    writes: list[Path] = []
+    monkeypatch.setattr(
+        "council.agents.store._write_parquet",
+        lambda frame, path: writes.append(path),
+    )
+
+    store.consolidate()
+
+    assert not writes, f"reading a consolidated store rewrote {writes}"
+
+
 def test_consolidating_an_empty_store_writes_nothing(store: DecisionStore) -> None:
     store.consolidate()
 

@@ -1,0 +1,10 @@
+# Streamlit collects usage statistics by default and says so on first launch.
+# A reader inspecting a published research artefact did not ask to be counted,
+# and the dashboard is a viewer for artefacts already in the repository -- there
+# is nothing here that needs telemetry to work.
+[browser]
+gatherUsageStats = false
+
+[server]
+# The dashboard reads artefacts and writes nothing; there is no upload path.
+maxUploadSize = 1

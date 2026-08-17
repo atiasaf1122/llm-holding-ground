@@ -482,21 +482,49 @@ uv run council probe --mock                                    # no daemon, no G
 uv run council probe --model qwen3.5:9b --out data/probe/qwen3.5-9b.jsonl
 ```
 
+The `--mock` run exercises the machinery, not the question: the mock answers with a token
+rather than with the right answer, so every rate in its table is necessarily zero. The real
+figures are in [`docs/results/run-4models-2y/probe/`](docs/results/run-4models-2y/probe/).
+
 Pass `--out` with a per-model path. The default output path is shared, so sequential runs of
 different models overwrite each other — which is exactly what happened to the first published
 probe table (D13).
 
-The dashboard reads whatever artefacts are in `data/`:
+**Inspecting the published run without regenerating anything.** Every command that reads
+artefacts takes `--data-dir`, so the run this repository publishes can be scored, tabulated
+and browsed straight from the clone — no GPU, no daemon, no network:
+
+```bash
+uv run council evaluate --data-dir docs/results/run-4models-2y
+COUNCIL_DATA_DIR=docs/results/run-4models-2y uv run streamlit run src/council/app/dashboard.py
+```
+
+Reading is read-only: the artefacts are byte-pinned evidence, and a command that merely
+inspects one leaves its checksum alone.
+
+The dashboard otherwise reads whatever artefacts are in `data/`:
 
 ```bash
 uv sync --frozen --extra dev --extra app
 uv run streamlit run src/council/app/dashboard.py
 ```
 
-**What you cannot reproduce exactly.** Vendors revise price history and model tags are
-re-published under the same name, so a rerun may not return the series or the answers this
-study used. That is why the vendor's raw response is pinned beside the parquet, why every
-artefact is committed, and why D16 exists as a registered defect rather than a footnote.
+**What you cannot reproduce exactly, with the size of it.** Vendors revise price history and
+model tags are re-published under the same name, so a rerun returns neither the series nor
+the answers this study used. Both were measured rather than assumed:
+
+- **The prices have already moved.** A refetch on 2026-08-18 returned the same 1,158 bars on
+  the same calendar with identical volumes — and **999 of them (86.3%) differ in OHLC**, by
+  up to 0.086% relative. That is back-adjustment re-derived against dividends paid since.
+  The magnitude is far below a decision threshold here, but it is not zero, and it is why
+  the vendor's raw response is pinned beside the parquet.
+- **The models have already moved.** Round-0 answers to byte-identical prompts disagree
+  across two of this study's own runs on 24.1% of seat-points, six times the within-run
+  floor, because the backend updated between them (D16).
+
+So the guarantee this repository makes is **recomputation, not regeneration**: every
+published figure is derived from committed artefacts by the test suite, on CPU, with no
+network. Regenerating from scratch is a different experiment, and is expected to disagree.
 
 ---
 

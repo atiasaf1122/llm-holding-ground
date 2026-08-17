@@ -428,9 +428,20 @@ class DecisionStore:
         Idempotent, and safe to call before a run as well as after one: doing so
         empties the parts directory, which is what keeps each triple within a run
         writing its part exactly once.
+
+        **Nothing to merge means nothing is written.** Not merely an optimisation:
+        every read path in the project passes through here, so an unconditional
+        rewrite meant that *inspecting* a published run re-serialised its parquet.
+        The frame compared equal and the bytes did not, which on a repository
+        whose evidence is byte-pinned is the difference between a checksum a
+        reader can verify and one that changes because they looked at it -- and it
+        put a rewritten artefact into `git status` for anyone running `git add -A`
+        afterwards.
         """
         sources = self._sources()
         if not sources:
+            return self._decisions_path
+        if sources == (self._decisions_path,):
             return self._decisions_path
 
         combined = pd.concat([pd.read_parquet(path) for path in sources], ignore_index=True)

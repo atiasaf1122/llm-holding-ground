@@ -255,7 +255,7 @@ def _generation_exit(generated: int, failures: int) -> int:
 
 
 def do_debate(args: argparse.Namespace, out: TextIO) -> int:
-    """Run the three debate arms over the contested points."""
+    """Run the debate arms over the contested points."""
     settings = settings_from(args)
     pin_device(settings.cuda_visible_devices)
     prices = load_or_synthesise_prices(settings, synthetic=args.synthetic, persist=True)
@@ -286,7 +286,7 @@ def do_debate(args: argparse.Namespace, out: TextIO) -> int:
     )
     print(
         f"{report.offered_points - report.dropped_points} point(s) answered by every "
-        f"arm; {report.dropped_points} withheld from all three for want of a placebo "
+        f"arm; {report.dropped_points} withheld from every arm for want of a placebo "
         f"donor at least {settings.placebo_min_gap_sessions} session(s) back, holding "
         f"every seat, for each of {settings.max_debate_rounds} round(s)",
         file=out,

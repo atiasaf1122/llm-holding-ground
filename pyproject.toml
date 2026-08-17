@@ -1,9 +1,16 @@
 [project]
 name = "council"
-version = "0.1.0"
+# 1.0.0 because the study is finished, not because the API is: this package is
+# the apparatus a published result was produced by, so the version names a state
+# of the *evidence*. It matches the tag CITATION.cff cites.
+version = "1.0.0"
 description = "Do language models hold their ground? A controlled study of persuasion in multi-agent committees, scored by the market."
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Asaf Atia" }]
+keywords = ["large-language-models", "multi-agent-systems", "sycophancy", "reproducible-research"]
 dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.5",

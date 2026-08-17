@@ -3,7 +3,7 @@
 Deciding whether to commit an evening to a sweep should not require starting it,
 so every number here is arithmetic over the grid rather than a measurement of it.
 :class:`~council.agents.runner.RunPlan` already does this for the independent arm;
-what this module adds is the three debate arms, which cannot be counted the same
+what this module adds is the debate arms, which cannot be counted the same
 way because they are only run where the agents disagreed.
 
 That makes the count exact in one case and an estimate in the other, and the
@@ -203,7 +203,7 @@ def plan_experiment(
         decisions: the stored decisions, used only to tell which contested points a
             placebo donor can be drawn for -- which is now what **every** arm is run
             on, since :func:`council.debate.sweep.run_debate_arms` filters the point
-            set once and hands the survivors to all three. Omitted, every stage
+            set once and hands the survivors to all of them. Omitted, every stage
             counts every contested point, which is what the sweep would spend only
             if every point had a donor.
         rebuttal_rounds: defaults to ``settings.max_debate_rounds``, the same
@@ -372,7 +372,7 @@ def _points_the_sweep_will_hold(
 
     All three, not the placebo alone. :func:`council.debate.sweep.run_debate_arms`
     withholds a point no committee can draw a placebo donor for from *every* arm, so
-    that the three cover one calendar and a difference between them is not partly a
+    that they cover one calendar and a difference between them is not partly a
     difference in which days they answered. A plan that counted all of them for two
     arms and the servable ones for the third would quote work no run will spend and
     leave ``remaining`` unable to reach zero however many times ``debate`` is run --

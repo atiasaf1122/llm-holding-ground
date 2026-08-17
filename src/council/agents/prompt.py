@@ -88,7 +88,7 @@ _DEBATE_INSTRUCTION: Final = (
     "you. Weigh them against the series above: change your position if the argument "
     "is better than yours, and keep it if it is not."
 )
-"""Deliberately symmetric, and byte-identical across all three debate arms.
+"""Deliberately symmetric, and byte-identical across every debate arm.
 
 There is no neutral way to introduce a disagreement, so the wording names both
 outcomes rather than pretending to name neither. Being identical across the arms

@@ -10,12 +10,15 @@ the run.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from council.agents.mock import MockProvider
+from council.debate.compositions import Seat
 from council.debate.contra import (
     CONTRA_ROUND_CAP,
     counter_schema,
@@ -41,7 +44,9 @@ from helpers_debate import (
 OTHER_TICKER = "XOM"
 
 
-def two_ticker_pool(days: tuple[date, ...] = OTHER_DAYS) -> dict:
+def two_ticker_pool(
+    days: tuple[date, ...] = OTHER_DAYS,
+) -> dict[tuple[date, str], Sequence[SeatView]]:
     """Donor days on both tickers, so a draw is free to pick the wrong one."""
     table = committee()
     pool = dict(placebo_pool(table, days=days))
@@ -79,7 +84,7 @@ def test_the_unconstrained_draw_is_untouched_by_the_flag_existing() -> None:
     would stop matching its own donor -- silently.
     """
     pool = two_ticker_pool()
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         pool=pool,
         point=(DAY, TICKER),
         composition=committee().identifier,
@@ -238,7 +243,7 @@ async def test_a_contradictor_conversation_stops_at_its_own_cap() -> None:
     caller = MockCaller()
     providers = {model: MockProvider(model=model) for model in {s.model for s in table.seats}}
 
-    async def contra(openings):
+    async def contra(openings: Mapping[Seat, SeatView]) -> dict[Seat, tuple[SeatView, ...]]:
         return await generate_counters(
             providers=providers,
             composition=table,

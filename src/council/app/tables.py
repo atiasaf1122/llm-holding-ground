@@ -169,11 +169,11 @@ def shift_rate_table(reports: Mapping[str, ArmShifts]) -> pd.DataFrame:
 def coverage_table(frame: pd.DataFrame) -> pd.DataFrame:
     """What each arm covers, so that two shift rates can be differenced knowingly.
 
-    Under the shipped design the three treatment arms cover one identical point set
-    -- a point with no placebo donor is withheld from **all three**
+    Under the shipped design every treatment arm covers one identical point set
+    -- a point with no placebo donor is withheld from **all of them**
     (:func:`council.debate.sweep.servable_points`), precisely so no arm difference
-    can be a coverage difference, and on the published run all three hold the same
-    50 points. This table is the *check* on that invariant rather than a report of
+    can be a coverage difference, and on the published run all five debate arms
+    hold the same 50 points. This table is the *check* on that invariant rather than a report of
     an expected gap: an interrupted sweep resumed against changed settings, or a
     future design change, is how the arms drift apart, and a coverage effect is
     invisible in a rate -- exactly the shape of an artefact that would be published
@@ -218,7 +218,7 @@ def coverage_note(coverage: pd.DataFrame) -> str | None:
     return (
         "The debate arms do not cover the same decision points -- "
         + ", ".join(f"{row.arm} {row.points}" for row in debated.itertuples(index=False))
-        + ". The design withholds a point any arm cannot serve from all three "
+        + ". The design withholds a point any arm cannot serve from every arm "
         "(council.debate.sweep.servable_points), so unequal coverage means this run "
         "violated that invariant -- an interrupted sweep resumed under different "
         "settings is the usual cause -- and part of any gap between the arms' rates "
