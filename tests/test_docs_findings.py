@@ -445,3 +445,96 @@ def test_the_probe_table_reproduces_from_the_per_model_artefacts() -> None:
         seen[tag] = tuple(rates)
 
     assert seen == published_rows
+
+
+# -- the extension verdict, recomputed from the artefacts --------------------------
+
+
+def test_the_adjudication_intervals_reproduce_from_the_parquet(
+    published: pd.DataFrame,
+) -> None:
+    """C29/C30: the four intervals the verdict rests on, tied to the artefact.
+
+    The rule that reads them was committed before the arms ran; this holds the
+    numbers it read. The rotation stratum, the declared bar, the shipped bootstrap
+    -- exactly as registered.
+    """
+    from council.evaluation.intervals import paired_shift_gap
+
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split()).replace(MINUS, "-")
+    rotations = published.loc[~published["composition"].astype(str).str.startswith("uniform")]
+
+    contra_placebo = paired_shift_gap(
+        rotations,
+        minuend_arm="debate_contradictor",
+        subtrahend_arm="debate_placebo",
+        threshold=0.20,
+    )
+    assert f"[{contra_placebo.lower_pp:+.2f}, {contra_placebo.upper_pp:+.2f}]" == (
+        "[+20.12, +27.62]"
+    )
+    assert contra_placebo.excludes_zero()
+
+    contra_debate = paired_shift_gap(
+        rotations, minuend_arm="debate_contradictor", subtrahend_arm="debate", threshold=0.20
+    )
+    assert f"[{contra_debate.lower_pp:+.2f}, {contra_debate.upper_pp:+.2f}]" == ("[+23.12, +30.63]")
+
+    same_cross = paired_shift_gap(
+        rotations,
+        minuend_arm="debate_placebo_same_instrument",
+        subtrahend_arm="debate_placebo",
+        threshold=0.20,
+    )
+    assert f"[{same_cross.lower_pp:+.2f}, {same_cross.upper_pp:+.2f}]" == "[-11.75, -4.62]"
+    assert same_cross.upper_pp < 0, "the foreign instrument was doing real work"
+
+    same_debate = paired_shift_gap(
+        rotations,
+        minuend_arm="debate_placebo_same_instrument",
+        subtrahend_arm="debate",
+        threshold=0.20,
+    )
+    assert f"[{same_debate.lower_pp:+.2f}, {same_debate.upper_pp:+.2f}]" == "[-8.12, -1.50]"
+    assert same_debate.upper_pp < 0, "the original surplus reverses on the right instrument"
+
+    for interval in ("[+20.12, +27.62]", "[+23.12, +30.63]", "[-11.75, -4.62]", "[-8.12, -1.50]"):
+        assert interval in document, interval
+
+
+def test_the_contradictor_rate_and_direction_reproduce(published: pd.DataFrame) -> None:
+    """0.606, toward the opposition, mostly across the sign -- the three numbers a
+    reader will quote from the verdict."""
+    from council.evaluation.persuasion import shifts as all_shifts
+
+    records = list(all_shifts(rows_in_arm(published, Arm.DEBATE_CONTRADICTOR), threshold=0.20))
+    rate = sum(record.shifted for record in records) / len(records)
+    assert f"{rate:.3f}" == "0.606"
+
+    movers = [r for r in records if r.shifted and r.prior_exposure != 0]
+    toward = [r for r in movers if (r.posterior_exposure - r.prior_exposure) * r.prior_exposure < 0]
+    assert round(100 * len(toward) / len(movers), 1) == 97.6
+
+    document = " ".join(FINDINGS.read_text(encoding="utf-8").split())
+    assert "0.606" in document and "97.6%" in document
+
+
+def test_the_counters_archive_covers_every_contradicted_reader() -> None:
+    """4,800 unique (reader, author) pairs -- the provenance the arm's prompts rest
+    on. An append log, so the count is of unique keys, not lines."""
+    import json
+
+    counters = DECISIONS.parent / "counters.jsonl"
+    rows = [json.loads(line) for line in counters.read_text(encoding="utf-8").splitlines()]
+    unique = {
+        (
+            row["decision_date"],
+            row["ticker"],
+            row["composition"],
+            row["reader_model"],
+            row["reader_persona"],
+            row["author_model"],
+        )
+        for row in rows
+    }
+    assert len(unique) == 4800

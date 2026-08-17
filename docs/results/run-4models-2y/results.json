@@ -112,6 +112,62 @@
         "turnover_per_period": 0.1098125
       },
       "point_count": 1002
+    },
+    {
+      "arm": "debate_placebo_same_instrument",
+      "baseline": {
+        "cagr": -0.04164005581585861,
+        "hit_rate": 0.4538152610441767,
+        "max_drawdown": 0.11094957768772196,
+        "periods": 500,
+        "sharpe": -0.8396689107759525,
+        "sortino": -1.0919858350675293,
+        "time_in_market": 0.981,
+        "total_return": -0.08092595191105234,
+        "turnover": 50.815625,
+        "turnover_per_period": 0.10163124999999999
+      },
+      "metrics": {
+        "cagr": -0.07624485621450583,
+        "hit_rate": 0.4468937875751503,
+        "max_drawdown": 0.15344694073777754,
+        "periods": 500,
+        "sharpe": -1.3752023608478001,
+        "sortino": -1.7776782512785718,
+        "time_in_market": 0.992,
+        "total_return": -0.14560154220757415,
+        "turnover": 50.7540625,
+        "turnover_per_period": 0.101508125
+      },
+      "point_count": 1002
+    },
+    {
+      "arm": "debate_contradictor",
+      "baseline": {
+        "cagr": -0.04178599074924161,
+        "hit_rate": 0.45090180360721444,
+        "max_drawdown": 0.10831249515502794,
+        "periods": 500,
+        "sharpe": -0.844230525793622,
+        "sortino": -1.098011599714216,
+        "time_in_market": 0.983,
+        "total_return": -0.08120361492574979,
+        "turnover": 53.651875,
+        "turnover_per_period": 0.10730374999999999
+      },
+      "metrics": {
+        "cagr": -0.06838380947614009,
+        "hit_rate": 0.46092184368737477,
+        "max_drawdown": 0.13889218341833354,
+        "periods": 500,
+        "sharpe": -1.233367602222555,
+        "sortino": -1.5975920613880035,
+        "time_in_market": 0.992,
+        "total_return": -0.1311148872814729,
+        "turnover": 53.566875,
+        "turnover_per_period": 0.10713375
+      },
+      "point_count": 1002
     }
   ],
   "buy_and_hold": {
@@ -170,6 +226,44 @@
       "scored_count": 1527,
       "skipped_count": 73
     },
+    "debate_contradictor": {
+      "buckets": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 174,
+          "hit_count": 98,
+          "hit_rate": 0.5632183908045977
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1207,
+          "hit_count": 640,
+          "hit_rate": 0.5302402651201326
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 47,
+          "hit_count": 24,
+          "hit_rate": 0.5106382978723404
+        }
+      ],
+      "correlation": -0.025523456809177978,
+      "hit_rate": 0.5336134453781513,
+      "scored_count": 1428,
+      "skipped_count": 172
+    },
     "debate_placebo": {
       "buckets": [
         {
@@ -207,6 +301,44 @@
       "hit_rate": 0.5115511551155115,
       "scored_count": 1515,
       "skipped_count": 85
+    },
+    "debate_placebo_same_instrument": {
+      "buckets": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 0,
+          "hit_count": 0,
+          "hit_rate": null
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 107,
+          "hit_count": 48,
+          "hit_rate": 0.4485981308411215
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1310,
+          "hit_count": 646,
+          "hit_rate": 0.49312977099236643
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 76,
+          "hit_count": 39,
+          "hit_rate": 0.5131578947368421
+        }
+      ],
+      "correlation": 0.028131557040874968,
+      "hit_rate": 0.49095780308104486,
+      "scored_count": 1493,
+      "skipped_count": 107
     },
     "debate_rationale_only": {
       "buckets": [
@@ -289,10 +421,12 @@
   "contested_share": 0.9820359281437125,
   "debated_points": {
     "debate": 50,
+    "debate_contradictor": 50,
     "debate_placebo": 50,
+    "debate_placebo_same_instrument": 50,
     "debate_rationale_only": 50
   },
-  "decision_count": 40968,
+  "decision_count": 52264,
   "decisions": {
     "dates": 501,
     "end": "2023-12-29",
@@ -300,7 +434,9 @@
   },
   "dropped_pairs": {
     "debate": 0,
+    "debate_contradictor": 0,
     "debate_placebo": 0,
+    "debate_placebo_same_instrument": 0,
     "debate_rationale_only": 0
   },
   "influence": {
@@ -409,6 +545,111 @@
         ]
       ]
     },
+    "debate_contradictor": {
+      "amount": [
+        [
+          0.0,
+          43.149999999999984,
+          70.24999999999999,
+          62.84999999999997
+        ],
+        [
+          325.4999999999999,
+          0.0,
+          317.34999999999985,
+          300.4
+        ],
+        [
+          147.84999999999997,
+          125.35000000000011,
+          0.0,
+          129.84999999999997
+        ],
+        [
+          61.20000000000001,
+          55.60000000000001,
+          90.95,
+          0.0
+        ]
+      ],
+      "arm": "debate_contradictor",
+      "conceded": [
+        [
+          0,
+          46,
+          59,
+          63
+        ],
+        [
+          254,
+          0,
+          218,
+          216
+        ],
+        [
+          144,
+          116,
+          0,
+          140
+        ],
+        [
+          64,
+          41,
+          78,
+          0
+        ]
+      ],
+      "models": [
+        "gemma4:12b",
+        "granite4.1:8b",
+        "phi4:14b",
+        "qwen3.5:9b"
+      ],
+      "net_influence": [
+        [
+          "gemma4:12b",
+          294
+        ],
+        [
+          "qwen3.5:9b",
+          236
+        ],
+        [
+          "phi4:14b",
+          -45
+        ],
+        [
+          "granite4.1:8b",
+          -485
+        ]
+      ],
+      "opportunities": [
+        [
+          0,
+          371,
+          359,
+          331
+        ],
+        [
+          371,
+          0,
+          379,
+          373
+        ],
+        [
+          359,
+          379,
+          0,
+          343
+        ],
+        [
+          331,
+          373,
+          343,
+          0
+        ]
+      ]
+    },
     "debate_placebo": {
       "amount": [
         [
@@ -510,6 +751,111 @@
           346,
           367,
           330,
+          0
+        ]
+      ]
+    },
+    "debate_placebo_same_instrument": {
+      "amount": [
+        [
+          0.0,
+          51.59999999999998,
+          57.59999999999998,
+          55.89999999999999
+        ],
+        [
+          102.52000000000002,
+          0.0,
+          109.46999999999998,
+          113.92
+        ],
+        [
+          53.150000000000055,
+          42.55000000000002,
+          0.0,
+          45.300000000000026
+        ],
+        [
+          34.75,
+          32.45,
+          45.400000000000006,
+          0.0
+        ]
+      ],
+      "arm": "debate_placebo_same_instrument",
+      "conceded": [
+        [
+          0,
+          65,
+          64,
+          66
+        ],
+        [
+          125,
+          0,
+          118,
+          137
+        ],
+        [
+          97,
+          69,
+          0,
+          86
+        ],
+        [
+          36,
+          24,
+          41,
+          0
+        ]
+      ],
+      "models": [
+        "gemma4:12b",
+        "granite4.1:8b",
+        "phi4:14b",
+        "qwen3.5:9b"
+      ],
+      "net_influence": [
+        [
+          "qwen3.5:9b",
+          188
+        ],
+        [
+          "gemma4:12b",
+          63
+        ],
+        [
+          "phi4:14b",
+          -29
+        ],
+        [
+          "granite4.1:8b",
+          -222
+        ]
+      ],
+      "opportunities": [
+        [
+          0,
+          368,
+          359,
+          331
+        ],
+        [
+          368,
+          0,
+          382,
+          370
+        ],
+        [
+          359,
+          382,
+          0,
+          342
+        ],
+        [
+          331,
+          370,
+          342,
           0
         ]
       ]
@@ -677,6 +1023,62 @@
       "skipped_count": 0,
       "threshold": 0.2
     },
+    "debate_contradictor": {
+      "bands": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 49,
+          "mean_distance": 0.4346938775510201,
+          "points": 25,
+          "reversal_rate": 0.0,
+          "reversed_count": 0,
+          "shift_rate": 1.0,
+          "shifted_count": 49
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 21,
+          "mean_distance": 0.6142857142857143,
+          "points": 12,
+          "reversal_rate": 0.23809523809523808,
+          "reversed_count": 5,
+          "shift_rate": 0.9047619047619048,
+          "shifted_count": 19
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 200,
+          "mean_distance": 0.493499999999999,
+          "points": 44,
+          "reversal_rate": 0.385,
+          "reversed_count": 77,
+          "shift_rate": 0.695,
+          "shifted_count": 139
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1316,
+          "mean_distance": 0.6159498480243181,
+          "points": 50,
+          "reversal_rate": 0.5037993920972644,
+          "reversed_count": 663,
+          "shift_rate": 0.5721884498480243,
+          "shifted_count": 753
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 14,
+          "mean_distance": 1.1714285714285715,
+          "points": 7,
+          "reversal_rate": 0.5714285714285714,
+          "reversed_count": 8,
+          "shift_rate": 0.7142857142857143,
+          "shifted_count": 10
+        }
+      ],
+      "skipped_count": 0,
+      "threshold": 0.2
+    },
     "debate_placebo": {
       "bands": [
         {
@@ -728,6 +1130,62 @@
           "reversed_count": 10,
           "shift_rate": 0.39473684210526316,
           "shifted_count": 15
+        }
+      ],
+      "skipped_count": 0,
+      "threshold": 0.2
+    },
+    "debate_placebo_same_instrument": {
+      "bands": [
+        {
+          "band": "[0.00, 0.20)",
+          "count": 51,
+          "mean_distance": 0.3470588235294116,
+          "points": 25,
+          "reversal_rate": 0.0,
+          "reversed_count": 0,
+          "shift_rate": 0.9019607843137255,
+          "shifted_count": 46
+        },
+        {
+          "band": "[0.20, 0.40)",
+          "count": 21,
+          "mean_distance": 0.5390476190476191,
+          "points": 11,
+          "reversal_rate": 0.38095238095238093,
+          "reversed_count": 8,
+          "shift_rate": 0.9523809523809523,
+          "shifted_count": 20
+        },
+        {
+          "band": "[0.40, 0.60)",
+          "count": 196,
+          "mean_distance": 0.23775510204081618,
+          "points": 42,
+          "reversal_rate": 0.10204081632653061,
+          "reversed_count": 20,
+          "shift_rate": 0.37244897959183676,
+          "shifted_count": 73
+        },
+        {
+          "band": "[0.60, 0.80)",
+          "count": 1317,
+          "mean_distance": 0.24577069096431356,
+          "points": 50,
+          "reversal_rate": 0.1662870159453303,
+          "reversed_count": 219,
+          "shift_rate": 0.296127562642369,
+          "shifted_count": 390
+        },
+        {
+          "band": "[0.80, 1.00]",
+          "count": 15,
+          "mean_distance": 0.7240000000000002,
+          "points": 8,
+          "reversal_rate": 0.3333333333333333,
+          "reversed_count": 5,
+          "shift_rate": 0.5333333333333333,
+          "shifted_count": 8
         }
       ],
       "skipped_count": 0,
@@ -792,12 +1250,16 @@
   },
   "short_committee_points": {
     "debate": 0,
+    "debate_contradictor": 0,
     "debate_placebo": 0,
+    "debate_placebo_same_instrument": 0,
     "debate_rationale_only": 0
   },
   "unpaired_rows": {
     "debate": 0,
+    "debate_contradictor": 0,
     "debate_placebo": 0,
+    "debate_placebo_same_instrument": 0,
     "debate_rationale_only": 0
   },
   "windows": {
@@ -853,6 +1315,58 @@
         }
       ]
     },
+    "debate_contradictor": {
+      "ties": 0,
+      "treatment_wins": 3,
+      "window_count": 5,
+      "windows": [
+        {
+          "control_return": -0.037428809656600115,
+          "index": 0,
+          "length": 100,
+          "margin": -0.0017534126298275332,
+          "start": 0,
+          "stop": 100,
+          "treatment_return": -0.03918222228642765
+        },
+        {
+          "control_return": -0.04315314140929161,
+          "index": 1,
+          "length": 100,
+          "margin": 0.006841871792555243,
+          "start": 100,
+          "stop": 200,
+          "treatment_return": -0.036311269616736364
+        },
+        {
+          "control_return": -0.031043684271806593,
+          "index": 2,
+          "length": 100,
+          "margin": 0.007522719320592008,
+          "start": 200,
+          "stop": 300,
+          "treatment_return": -0.023520964951214585
+        },
+        {
+          "control_return": -0.02199634994378552,
+          "index": 3,
+          "length": 100,
+          "margin": -0.0049941292086151945,
+          "start": 300,
+          "stop": 400,
+          "treatment_return": -0.026990479152400715
+        },
+        {
+          "control_return": -0.020414561408915732,
+          "index": 4,
+          "length": 100,
+          "margin": 0.008067891854442677,
+          "start": 400,
+          "stop": 500,
+          "treatment_return": -0.012346669554473055
+        }
+      ]
+    },
     "debate_placebo": {
       "ties": 0,
       "treatment_wins": 3,
@@ -902,6 +1416,58 @@
           "start": 400,
           "stop": 500,
           "treatment_return": -0.015102982098722184
+        }
+      ]
+    },
+    "debate_placebo_same_instrument": {
+      "ties": 0,
+      "treatment_wins": 3,
+      "window_count": 5,
+      "windows": [
+        {
+          "control_return": -0.037428809656600115,
+          "index": 0,
+          "length": 100,
+          "margin": -0.001471150985691505,
+          "start": 0,
+          "stop": 100,
+          "treatment_return": -0.03889996064229162
+        },
+        {
+          "control_return": -0.04315314140929161,
+          "index": 1,
+          "length": 100,
+          "margin": 0.004178494736657101,
+          "start": 100,
+          "stop": 200,
+          "treatment_return": -0.038974646672634505
+        },
+        {
+          "control_return": -0.031043684271806593,
+          "index": 2,
+          "length": 100,
+          "margin": 0.0012666836847754492,
+          "start": 200,
+          "stop": 300,
+          "treatment_return": -0.029777000587031144
+        },
+        {
+          "control_return": -0.02199634994378552,
+          "index": 3,
+          "length": 100,
+          "margin": -0.007139107791545696,
+          "start": 300,
+          "stop": 400,
+          "treatment_return": -0.029135457735331216
+        },
+        {
+          "control_return": -0.020414561408915732,
+          "index": 4,
+          "length": 100,
+          "margin": 0.0024492074889540527,
+          "start": 400,
+          "stop": 500,
+          "treatment_return": -0.01796535391996168
         }
       ]
     },

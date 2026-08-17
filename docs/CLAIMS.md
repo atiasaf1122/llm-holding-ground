@@ -6,10 +6,11 @@ prose search. Each is either supported by an artefact in this repository or it i
 **The run these figures come from.** Real daily bars for AAPL and XOM, split and
 dividend adjusted, 2021-09-13 to 2023-12-29 (579 sessions), decisions on the 501
 sessions from 2022-01-03 to 2023-12-29. Four models, four personas, eight committees.
-40,968 stored decisions, **zero generation failures**. The debate arms ran on 50
-decision points sampled evenly across the two years (`max_debate_points = 60`, of
-which 10 had no placebo donor and were withheld from all three arms), giving 1,200
-conversations and 24,936 debate rows. Artefacts: `docs/results/run-4models-2y/`
+52,264 stored decisions, **zero generation failures**. The five debate arms --
+three original, two added by the pre-registered extension -- ran on 50 decision
+points sampled evenly across the two years (`max_debate_points = 60`, of which 10
+had no placebo donor and were withheld from every arm), giving 2,000 conversations
+and 36,232 debate rows, plus 4,800 archived counter-arguments. Artefacts: `docs/results/run-4models-2y/`
 (decisions.parquet, results.json, prices.parquet, probe/ with one file per model) -- the pinned copies
 the doc-contract tests recompute from; `data/` is the mutable working directory.
 
@@ -108,6 +109,33 @@ C28. **At the conversation's end the round-1 ordering inverts -- in the mixed
     **79.4%**, placebo **80.1%** -- the fixed-rendering pair (debate vs placebo)
     moves churn 9.6pp on content, the fixed-content pair (debate vs rationale-only)
     8.9pp on rendering; the three cells cannot rank the two factors.
+C29. **Undiluted coherent opposition is the dominant mover measured anywhere in
+    this study.** The contradictor arm -- three peers, each arguing against the
+    reader's opening view on the reader's own price context, positions rendered,
+    opposite side enforced by the output grammar, one rebuttal round -- produces a
+    round-0-to-1 shift rate of **0.606** against debate's 0.324 and the placebo's
+    0.383. Both pre-registered intervals exclude zero from above: contradictor
+    minus placebo **+23.75pp [+20.12, +27.62]**, contradictor minus debate
+    **+26.88pp [+23.12, +30.63]** (rotation stratum). 97.6% of the movements go
+    toward the opposition and 77.6% cross the sign outright. Per model: granite4.1
+    92.8%, phi4 81.5%, gemma4 40.2%, qwen3.5 28.0% -- qwen's contradictor-minus-
+    debate interval [-0.50, +10.00] is the one of eight that does not exclude
+    zero. The arm bundles unanimity, targeting and task framing against the debate
+    comparison and cannot split them (stated in findings); what it establishes is
+    D8's direction: opposition, not incoherence, is what moves these models, and
+    coherence amplifies rather than protects. The same models capitulate at ~0%
+    on verifiable answers under the same challenge mechanism (C12).
+C30. **The original placebo surplus decomposes into its foreign-instrument
+    component -- and then inverts.** Same-instrument placebo shift rate 0.336;
+    minus the cross-instrument placebo, **-8.12pp [-11.75, -4.62]** (rotation),
+    negative in all four models separately and significant in three. Minus the
+    debate arm, **-5.00pp [-8.12, -1.50]**: with the donor held to the reader's
+    own instrument, irrelevant content moves agents *less* than a genuine
+    conversation, so C8's rotation-stratum +3.12pp was carried by the
+    cross-instrument donors D14 counted. C8 stands as the record of the
+    first-published comparison; this is what it measures once the D14 factor is
+    held at zero.
+
 C9. **The declared-bar null on withholding peers' numbers is the zero-crossing of a
     sign-changing dose-response, not the absence of an effect.** Debate minus
     rationale-only, round 0 to 1, by bar: **+4.19 [+2.19, +6.25]** at 0.10,
@@ -258,7 +286,12 @@ D1. The document describes +1.34% in a placebo peer block as "a number that exis
     a real rationale a model produced on a neighbouring decision point, which is
     exactly how the placebo is built. The wording is wrong and is being corrected.
 
-D8. The placebo controls for being contradicted, but it does not control for being
+D8. **ADJUDICATED by the extension run -- see C29.** The coherent contradictor
+    moved agents far more than either the placebo or the debate arm, so the
+    question this defect posed -- contradiction or incoherence? -- resolved in
+    contradiction's favour, more strongly than either reading anticipated. The
+    original statement, kept as the record of what was unknown when the headline
+    first shipped: the placebo controls for being contradicted, but it does not control for being
     contradicted *incoherently*. A peer arguing about a different day describes
     conditions that do not match the data in front of the reader. C8 therefore
     supports "the movement is not a response to argument content" and does **not**
@@ -326,8 +359,10 @@ D13. **RESOLVED. The probe table's first publication rested on an overwritten
     not record -- is general, and because for a day the repository published a table
     it could not back.
 
-D14. **The placebo is displaced in instrument as well as in time, and only a module
-    docstring said so.** `select_placebo_point` constrains the donor's date and not
+D14. **MEASURED by the extension run -- see C30: the displacement this defect
+    counted turned out to carry the rotation-stratum placebo effect entirely.**
+    The original statement: the placebo is displaced in instrument as well as in
+    time, and only a module docstring said so. `select_placebo_point` constrains the donor's date and not
     its ticker: re-running the shipped selector over every round-1 placebo point,
     **49.0% of donors are the other instrument**, and the median donor sits 214
     calendar days from the day being decided (max 671) -- "at least 60 sessions"

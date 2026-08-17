@@ -403,9 +403,15 @@ happened to the published probe table (`CLAIMS.md` D13).
       [`docs/results/run-4models-2y/probe/`](docs/results/run-4models-2y/probe/)
       confirmed the printed table to the digit, bar one denominator (phi4 0/24 for
       0/23 -- regeneration noise, D12).
-- [ ] The one arm that would settle the open question: peers who contradict *coherently*
-      — relevant to the day, arguing for the wrong conclusion. Until it runs, the headline
-      result bounds the argument's content and not the reader's response to being
-      contradicted. See D8 in [`CLAIMS.md`](docs/CLAIMS.md), and the specification at the
-      end of [`findings.md`](docs/findings.md) for the metric and peer-schedule pins the
-      comparison needs.
+- [x] The arm that settled the open question — and settled it beyond either
+      anticipated answer. The coherent contradictor (peers arguing against the reader on
+      the reader's own data, opposite side enforced by the output grammar) produced a
+      **0.606** shift rate against debate's 0.324 and the placebo's 0.383: opposition,
+      not incoherence, is what moves these models, and coherence amplifies. The
+      same-instrument placebo simultaneously decomposed the original headline: with the
+      donor on the reader's own instrument, the placebo's surplus over debate
+      **reverses** (−5.00pp [−8.12, −1.50]). Adjudicated by the rule committed before
+      the run; C29/C30 in [`CLAIMS.md`](docs/CLAIMS.md), verdict at the end of
+      [`findings.md`](docs/findings.md).
+- [ ] The persona-as-disposition run (D10): identity phrasing against tendency
+      phrasing, control + debate + placebo in a separate data directory.

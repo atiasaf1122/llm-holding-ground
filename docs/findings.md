@@ -27,8 +27,12 @@ previously unbackable table to the digit bar one denominator.
 
 ## 1. The placebo moves agents more than a real debate does --- at the first exchange
 
-This is the headline, and it is the opposite of what the experiment was built
-expecting to find.
+This is the headline as first published, and it is the opposite of what the
+experiment was built expecting to find. **Read it with the extension verdict at
+the end of this document**: the surplus decomposed into its foreign-instrument
+component and then inverted, and the force that actually dominates --- undiluted
+coherent opposition --- turned out to be twice as large as anything in this
+section.
 
 ### Shift rate, by the confidence held before seeing any peer
 
@@ -111,6 +115,13 @@ it, which strengthens the incoherence reading of D8. Registered as D14.
 interval at **0.15 spans zero** ([−0.25, +5.62]) while 0.20's lower edge sits at
 +0.25pp. The pooled gap excludes zero at every bar; the stratum quoted as defensible
 is the fragile one, and a reader should know the declared bar is doing work.
+
+**And the extension run then unmade it.** With the donor constrained to the
+reader's own instrument, this arm's surplus over debate *reverses* --- same-
+instrument placebo minus debate is −5.00pp [−8.12, −1.50] --- so the +3.12pp was
+carried by the cross-instrument donors D14 counted. The decomposition is at the
+end of this document; this paragraph stands as the record of what the headline
+looked like before it.
 
 ### The movement does not last --- in the mixed committees, the ordering reverses
 
@@ -544,3 +555,67 @@ excluding zero attributes part of the placebo surplus to instrument displacement
 an interval containing zero says displacement contributed nothing measurable.
 Uniform-stratum and pooled figures will be reported beside these but do not
 adjudicate, for D11's reason.
+
+### The verdict --- and the number the rule did not imagine
+
+*Everything above this line was committed before the arms ran. This subsection
+reports what they produced: 11,300 decisions, zero generation failures, one
+conversation abandoned to a validation error and completed on the resume, every
+counter archived. Artefacts in `docs/results/run-4models-2y/`
+(`counters.jsonl` is an append log; a resume may append a conversation's
+counters twice, and readers keep the last line per (date, ticker, committee,
+reader, author) --- 4,800 unique pairs).*
+
+The round-0-to-1 shift rates, all five arms side by side:
+
+| arm | shift rate |
+| --- | --- |
+| debate | 0.324 |
+| rationale-only | 0.323 |
+| same-instrument placebo | **0.336** |
+| cross-instrument placebo | 0.383 |
+| **coherent contradictor** | **0.606** |
+
+**The rule's branch 3 fires --- both intervals exclude zero --- but not in the
+way its parenthetical imagined.** Contradictor − placebo is **+23.75pp
+[+20.12, +27.62]** and contradictor − debate is **+26.88pp [+23.12, +30.63]**
+(rotation stratum, as registered). The branch says "the contradictor lands
+between the arms"; it landed **above both**, by twenty points. Reported per the
+rule, with the excess stated rather than absorbed: coherent, unanimous, targeted
+opposition does not move agents *like* the placebo or *like* the debate arm ---
+it moves them nearly **twice as much as either**. 97.6% of the movements go
+*toward* the opposition and 77.6% cross the sign outright. Per model: granite4.1
+capitulates on **92.8%** of contradicted decisions, phi4 81.5%, gemma4 40.2%,
+qwen3.5 28.0% (whose contradictor-minus-debate interval, [−0.50, +10.00], is the
+one that does not exclude zero).
+
+**And the D14 decomposition rewrites the original headline.** Same-instrument
+minus cross-instrument placebo: **−8.12pp [−11.75, −4.62]** --- the foreign
+instrument was doing real work. More than that: same-instrument placebo minus
+debate is **−5.00pp [−8.12, −1.50]**, *negative*. Once the donor stays on the
+reader's own instrument, the placebo's celebrated surplus over genuine debate
+**reverses** in the rotation stratum. Section 1's defensible +3.12pp was carried
+by the cross-instrument donors. Irrelevant chatter about the right instrument
+moves agents slightly *less* than a real conversation.
+
+The corrected reading of the whole study, first exchange, one sentence each:
+
+* **Genuine mixed debate barely moves anyone** (0.324) --- because in a real
+  committee, opposition is diluted by agreement.
+* **Irrelevant content moves agents only when it is doubly displaced** --- the
+  original placebo effect shrinks to its foreign-instrument component and then
+  inverts (D8's "incoherence" reading survives only as this component).
+* **Undiluted coherent opposition is the dominant force measured anywhere in
+  this study**: three peers arguing against you, on your data, flips a model
+  more than half the time --- while the same models hold verifiable answers at
+  ~0% under the same mechanism (§4).
+
+**What the contradictor arm bundles, stated before anyone quotes it.** Against
+the debate arm it varies three things at once: *unanimity* (every peer opposes,
+where a rotation debate is mixed), *targeting* (the counters address the
+reader's own rationale), and *task framing* (its peers were instructed to argue
+the opposite; debate peers merely state their views). The +26.88pp is the joint
+effect and this design cannot split it. What it does establish, cleanly, is the
+direction D8 asked about: opposition itself --- not incoherence --- is what moves
+these models, and coherence does not protect them; it amplifies. Registered as
+C29/C30, with D8 and D14 updated to point here.
