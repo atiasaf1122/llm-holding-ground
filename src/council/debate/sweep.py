@@ -583,10 +583,10 @@ async def run_debate_arms(
     is four seats answering the same round, and unloading between them would swap a
     checkpoint in and out per call.
 
-    **All three arms are run on one point set.** The contested points handed in are
+    **Every arm is run on one point set.** The contested points handed in are
     filtered by :func:`servable_points` down to those a placebo donor can actually
     serve, and the survivors go to every arm. Filtering the placebo alone -- which is
-    what skipping the point inside :meth:`_Sweep.group` amounted to -- left the three
+    what skipping the point inside :meth:`_Sweep.group` amounted to -- left the
     arms covering different calendars, and the points the placebo lost are the
     earliest ones rather than a random sample, so part of any debate-minus-placebo
     difference was a difference in which days each arm answered. The count withheld
@@ -626,7 +626,7 @@ async def run_debate_arms(
         _LOG.warning(
             "%d of %d contested point(s) withheld from every arm: no placebo donor "
             "at least %d session(s) back holding every seat, for each of %d round(s) "
-            "-- earliest %s, latest %s. All three arms answer the remaining %d so "
+            "-- earliest %s, latest %s. Every arm answers the remaining %d so "
             "that no difference between them is a difference in coverage",
             len(dropped),
             len(offered),

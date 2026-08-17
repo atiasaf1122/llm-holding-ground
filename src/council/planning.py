@@ -240,7 +240,7 @@ def plan_experiment(
         # because the sweep applies it once and to every arm. Counting the placebo
         # alone at the servable points, which is what this did while the placebo was
         # the only arm that skipped, now prices three stages the run will not spend
-        # and prints three different figures for three arms that answer one set.
+        # and prints a different figure per arm for arms that answer one set.
         contested = _points_the_sweep_will_hold(
             contested,
             committees=committees,
@@ -313,7 +313,7 @@ def _debate_stage(
     ceiling is the committee, not the queue -- and every model has to be resident
     at once, which is the operational fact this figure is really reporting.
 
-    All three arms are counted over one point set, because the sweep runs them over
+    Every arm is counted over one point set, because the sweep runs them over
     one point set: the caller has already filtered it.
     """
     parallelism = max(len({seat.model for seat in table.seats}) for table in committees)

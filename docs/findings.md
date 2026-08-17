@@ -217,7 +217,7 @@ where the two tails cancel.
 
 On the *spread between seats* it does a great deal. Opening spreads are *near*-equal
 across arms --- round 0 renders the identical prompt everywhere, and the stored
-`prompt_hash` matches across all four arms on every row --- but they are not identical,
+`prompt_hash` matches across every arm on every row --- but they are not identical,
 and the reason is worth a paragraph. At temperature 0 with a fixed seed, the backend
 still does not reproduce exactly: **4.3% of round-0 seat-point exposures differ between
 the debate and placebo arms on byte-identical prompts**, 2.19% differ by at least the
