@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: uv sync --frozen || uv sync
+      - name: Ruff
+        run: uv run ruff check src tests
+      - name: Mypy (strict)
+        run: uv run mypy src
+      - name: Tests
+        # The whole suite runs on the mock provider: no daemon, no GPU, no
+        # network. That is a design property of the project, not a CI trick --
+        # see MockProvider and `council dryrun`.
+        run: uv run pytest -q
