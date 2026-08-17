@@ -49,8 +49,9 @@ class Signal(BaseModel):
 class Arm(StrEnum):
     """Which experimental condition produced a decision.
 
-    The four arms are what separate "the model was persuaded" from three cheaper
-    explanations, and each exists to rule one of them out.
+    The arms are what separate "the model was persuaded" from the cheaper
+    explanations, and each exists to rule one of them out. Six of them: the
+    control, the treatment, and four that each hold one factor fixed.
     """
 
     INDEPENDENT = "independent"

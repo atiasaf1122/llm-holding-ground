@@ -382,7 +382,7 @@ def _pairs(rows: Sequence[DecisionRow]) -> tuple[tuple[DecisionRow, DecisionRow]
         (rounds[OPENING_ROUND], rounds[REBUTTAL_ROUND])
         # Sorted chronologically rather than on the grouping key, which leads with
         # composition and arm: this function promises date order, and a frame
-        # spanning three debate arms is the normal case here rather than the edge.
+        # spanning several debate arms is the normal case here rather than the edge.
         for _, rounds in (
             (key, _paired(held)) for key, held in sorted(_by_round(rows).items(), key=_pair_order)
         )

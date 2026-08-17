@@ -225,10 +225,13 @@ the debate and placebo arms on byte-identical prompts**, 2.19% differ by at leas
 puts an unreported-until-now noise floor of roughly **2pp** under every shift rate in
 this document. It is symmetric across arms, so it cannot manufacture the gaps between
 them, but "identical by construction" was an assertion about the backend, not about the
-artefact, and the artefact disagrees. Registered as D12; the opening spreads below are
-the measured ones per arm's own rows:
+artefact, and the artefact disagrees. Registered as D12; the opening column below is
+the **debate arm's own** measured spread, and the other two arms differ from it in the
+third decimal rather than being equal to it --- placebo 1.281 / 0.561, rationale-only
+1.267 / 0.552, as C10 gives them per arm. Quoting one opening for all three would
+repeat the assertion D12 exists to withdraw:
 
-| committee | opening | debate | rationale-only | placebo |
+| committee | opening (debate arm) | debate | rationale-only | placebo |
 | --- | --- | --- | --- | --- |
 | rotation (four personas) | 1.264 | **0.703** | 0.910 | 1.028 |
 | uniform (one persona ×4) | 0.541 | **0.153** | 0.364 | 0.232 |

@@ -486,8 +486,8 @@ async def run_debate(
         # just taken may be the last the cap allows, and in the placebo arm the
         # next iteration reads a donor block that is never empty -- so a round in
         # which every seat failed would be returned as CAP and counted as a
-        # conversation held, in the placebo arm at any cap and in all three at the
-        # shipped cap of one.
+        # conversation held -- in the placebo arm at any cap, and in every arm at
+        # a cap of one.
         if not live_views(rounds[-1]):
             reason = StopReason.NO_SPEAKERS
             break

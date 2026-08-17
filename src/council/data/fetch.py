@@ -21,9 +21,13 @@ this: agents see normalised returns with no dates, no ticker and no price levels
 (:mod:`council.data.context`). It reduces recognition; it cannot prove its absence,
 and a distinctive drawdown shape is still a shape.
 
-**Reproducibility.** Vendors revise history. The raw response is written beside the
-parquet so that a rerun can be compared against the bytes this study actually used,
-rather than against whatever the vendor serves later.
+**Reproducibility.** Vendors revise history, and measurably: a refetch two years on
+returns the same calendar and the same volumes with every AAPL bar revised. So the
+raw response is written beside the parquet, and a rerun can be compared against the
+bytes a run actually received rather than against whatever the vendor serves later.
+This is a guarantee for runs from here on and not one the published study can offer
+about itself -- that fetch predates this module's use and its response was not kept
+(D20), so the parquet is the earliest artefact of it that exists.
 """
 
 from __future__ import annotations

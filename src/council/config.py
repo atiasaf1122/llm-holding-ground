@@ -152,9 +152,10 @@ class Settings(BaseSettings):
     placebo_min_gap_sessions: int = Field(default=60, ge=0)
 
     # How many contested points the debate arms are run on. `None` is all of them,
-    # which over the configured two years prices at roughly 690,000 inferences --
-    # about seventy-two hours, and that is the upper bound assuming no conversation
-    # ever stops early.
+    # which over the configured two years prices at roughly 1,039,000 inferences --
+    # about a hundred and fifteen hours, and that is the upper bound assuming no
+    # conversation ever stops early. (It read 690,000 and seventy-two hours while
+    # the design had three arms; the roster grew and the estimate did not.)
     #
     # A budget, and therefore not pre-registered either: it was chosen after the
     # control arm had run, from its measured contested share. It buys precision back

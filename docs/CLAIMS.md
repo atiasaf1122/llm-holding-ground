@@ -220,7 +220,8 @@ C14. **The dispersion gate is measured on the wrong unit, and this is the first 
     disagreed about.
 C15. **Prices are real.** Split and dividend adjusted daily bars from Yahoo Finance via
     `yfinance` with `auto_adjust=True`, fetched once and pinned at
-    `data/prices.parquet`, with the vendor's response kept verbatim beside it. Over the
+    `docs/results/run-4models-2y/prices.parquet`. The vendor's response itself was not
+    kept -- the parquet is the earliest artefact of this fetch that exists (D20). Over the
     decision window AAPL returned **+7.0%** and XOM **+69.2%** close-to-close (the
     backtest itself is open-to-open, where the same window reads +10.3% / +76.2%; the
     convention is stated because the two do not reconcile without it) -- AAPL fell hard
@@ -305,12 +306,13 @@ C25. **The run was interrupted once and the interruption is visible in the artef
      tens of thousands of `UNAVAILABLE` rows. The resume skipped the 19 finished groups
      and no row in `decisions.parquet` carries a failure.
 
-## Known already-found defects, do not spend time rediscovering
+## Registered defects
 
-D1. The document describes +1.34% in a placebo peer block as "a number that exists
-    nowhere in the agent's context", implying fabrication. It is not fabricated: it is
-    a real rationale a model produced on a neighbouring decision point, which is
-    exactly how the placebo is built. The wording is wrong and is being corrected.
+D1. **RESOLVED.** The document described +1.34% in a placebo peer block as "a number
+    that exists nowhere in the agent's context", implying fabrication. It was not
+    fabricated: it is a real rationale a model produced on a neighbouring decision
+    point, which is exactly how the placebo is built. The wording was corrected and
+    the figure no longer appears anywhere in the repository.
 
 D8. **ADJUDICATED by the extension run -- see C29.** The coherent contradictor
     moved agents far more than either the placebo or the debate arm, so the
@@ -443,6 +445,48 @@ D17. **The price fetch was never in the repository.** `.gitignore` carried an
     means the module shipped without a test of its own until now -- refusals
     for a short history, a holed session and disagreeing calendars are covered
     in `tests/test_data_fetch.py`, all against a stubbed vendor.
+
+D18. **Reading a published run rewrote it.** Every read path calls
+    `DecisionStore.consolidate`, which re-serialised the decisions parquet
+    whether or not there was anything to merge -- so `council evaluate
+    --data-dir docs/results/run-4models-2y`, the command for *inspecting* the
+    evidence, left it modified in `git status` and changed its checksum. The
+    frame compared equal; the bytes did not. On a repository whose argument is
+    that its evidence is byte-pinned, that is the defect and not a nuisance: a
+    reader verifying a hash gets a mismatch caused by having looked, and a
+    contributor running `git add -A` commits a rewritten artefact without
+    noticing. The existing "consolidating twice changes nothing" test passed
+    throughout, because pandas is deterministic within one machine and the
+    drift only appears across the versions a reader actually has -- so the
+    replacement asserts that no write is *attempted*, not that the bytes match.
+    Fixed by returning early when the consolidated file is the only source.
+
+D19. **The strict type gate covered half of what the project claimed.**
+    `pyproject.toml` declares `files = ["src/council", "tests"]`, with a comment
+    arguing the tests must be checked because a fixture that drifts out of shape
+    passes by asserting nothing. CI ran `mypy src`, and a path argument silently
+    overrides the declaration -- so the tests were never type-checked, and 25
+    errors accumulated where nothing was looking, 14 of them in a file added by
+    the commit that fixed D17. All fixed; CI now runs bare `mypy`, so the gate
+    cannot narrow again without the declaration itself changing. The general
+    form is the one D15 and D17 also take: **a check is worth what the evidence
+    that it ran is worth**, and a gate named in two places will eventually
+    disagree with itself.
+
+D20. **The provenance artefact four documents cited does not exist.** `README.md`,
+    `NOTICE.md` twice, and C15 all stated that the vendor's response was kept
+    verbatim beside the price parquet, so that a refetch could be diffed against
+    the bytes this study used. It was not: `council prices` writes one, but that
+    command was written after the study ran, this fetch predates it, and the raw
+    response was never retained. The earliest artefact of it that exists is the
+    parquet. Found by a pre-publication documentation sweep, one release after
+    D17 -- the same failure shape, in the same repository, in sentences partly
+    written while fixing D17: **a claim about what the repository contains,
+    asserted by someone reading the working directory rather than the index.**
+    Corrected in all four places; the guarantee now reads as one about future
+    runs, which is what it is. What is unaffected: the measured revision in the
+    README is a comparison against the parquet, not against the missing bytes,
+    and every published figure is recomputed from artefacts that are present.
 
 ### Superseded defects, retained for provenance
 

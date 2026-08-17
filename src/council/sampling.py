@@ -17,7 +17,7 @@ Measuring six months means measuring one regime and calling it the answer. Sampl
 arm traded on fewer days than the control. It does not:
 :func:`council.scoring.arm_exposures` starts every treatment arm from the
 committee's own independent view and overwrites it only at the debated points, so
-all four arms are backtested over the identical calendar at the identical
+every arm is backtested over the identical calendar at the identical
 rebalancing rate. What thinning changes is how many days a treatment arm differs
 from the control on -- which *dilutes* the market-side effect toward zero, and
 leaves the behavioural measurements untouched, since shift rate, influence and stop

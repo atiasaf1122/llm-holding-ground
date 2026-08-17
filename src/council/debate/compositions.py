@@ -28,10 +28,10 @@ like a Latin square and silently answers a different question.
 persona. Without them, a difference between rotations cannot be attributed to the
 *mixture* rather than to the personas themselves.
 
-Eight configurations, ``8 * 8 * 1000 = 64,000`` calls **per arm** -- and the sweep
-runs three treatment arms (:data:`council.planning.TREATMENT_ARMS`), so eight
-committees cost ``8 * 4 * 2 * 3 = 192`` calls per contested point, about 192,000 at
-1,000 contested points. The 256-versus-8 ratio above is unaffected: both sides of it
+Eight configurations -- and the sweep runs five treatment arms
+(:data:`council.planning.TREATMENT_ARMS`) at the shipped six-round cap, so eight
+committees cost 1,056 calls per contested point and about 1,039,000 over the 984
+the published calendar holds. The 256-versus-8 ratio above is unaffected: both sides of it
 are per-arm figures.
 
 Every question the grid existed to answer is still asked: whether a persona travels

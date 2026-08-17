@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from council.config import PROJECT_ROOT, get_settings
@@ -37,6 +38,9 @@ SURVIVING_RUN = (
 )
 """The two-model run's decisions. Four files said these had been *deleted* while the
 same sections cited this path as the source of their recomputed figures."""
+
+PUBLISHED = PROJECT_ROOT / "docs" / "results" / "run-4models-2y"
+"""The published run's pinned artefacts."""
 
 MOVED_ARTEFACT = "docs/results/run-2models"
 """Where the two-model run used to live. Cited in five places after it moved under
@@ -586,14 +590,26 @@ def test_a_per_model_result_shows_every_model_including_the_awkward_one() -> Non
 
 
 def test_the_readme_does_not_claim_a_decision_on_every_session_the_prices_hold() -> None:
-    # `agents.runner.decision_calendar` drops the first `lookback_days - 1` sessions
-    # as warm-up, so at the shipped configuration 59 of the price table's 520
-    # sessions carry no decision -- the 461 the README quotes elsewhere.
-    body = " ".join(text(README).split())
+    """The price table is longer than the decision calendar, and by how much is not
+    what the obvious reading says.
 
+    `agents.runner.decision_calendar` drops the first `lookback_days - 1` sessions
+    *and* everything before `start`, and on the shipped configuration it is `start`
+    that binds, because `data.fetch` pads the request before it deliberately. So the
+    warm-up is the 78 sessions the artefacts show, not the 59 `lookback_days` alone
+    would give -- an arithmetic a reader can check in one subtraction, and which the
+    README asserted wrongly until a pre-publication sweep did the subtraction.
+    """
+    body = " ".join(text(README).split())
+    prices = pd.read_parquet(PUBLISHED / "prices.parquet")
+    decisions = pd.read_parquet(PUBLISHED / "decisions.parquet")
+    warm_up = prices["date"].nunique() - decisions["decision_date"].nunique()
+
+    assert warm_up == 78, "the published artefacts no longer carry the quoted warm-up"
     assert "on every session the price table holds" not in body
     assert "full `lookback_days` window behind it" in body
-    assert "are warm-up" in body
+    assert f"warm-up is **{warm_up} sessions**" in body
+    assert "579" in body and "501" in body, "the two session counts must both be stated"
 
 
 # -- there is no frequency axis in this repository --------------------------------

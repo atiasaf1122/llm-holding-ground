@@ -392,7 +392,7 @@ Hence the framing in the README, decided before any result existed:
 > **a methodology demonstration, not a claim about markets.**
 
 Saying this first is not modesty. With three aggregation rules, eight
-configurations, four arms and several statistics, **something will look significant
+configurations, six arms and several statistics, **something will look significant
 by accident.** The [pre-registered comparison](../README.md#pre-registered-primary-comparison)
 and the two thresholds fixed in [`config.py`](../src/council/config.py) --
 `shift_threshold` for what counts as changing one's mind, `dispersion_threshold` for

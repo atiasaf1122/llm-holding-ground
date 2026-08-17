@@ -239,7 +239,7 @@ def plan_experiment(
         # The same filter the sweep applies, applied once and to every stage --
         # because the sweep applies it once and to every arm. Counting the placebo
         # alone at the servable points, which is what this did while the placebo was
-        # the only arm that skipped, now prices three stages the run will not spend
+        # the only arm that skipped, now prices stages the run will not spend
         # and prints a different figure per arm for arms that answer one set.
         contested = _points_the_sweep_will_hold(
             contested,
@@ -370,11 +370,11 @@ def _points_the_sweep_will_hold(
 ) -> tuple[PointKey, ...]:
     """The contested points every arm will actually be run on.
 
-    All three, not the placebo alone. :func:`council.debate.sweep.run_debate_arms`
+    Every arm, not the placebo alone. :func:`council.debate.sweep.run_debate_arms`
     withholds a point no committee can draw a placebo donor for from *every* arm, so
     that they cover one calendar and a difference between them is not partly a
-    difference in which days they answered. A plan that counted all of them for two
-    arms and the servable ones for the third would quote work no run will spend and
+    difference in which days they answered. A plan that counted all of them for some
+    arms and the servable ones for others would quote work no run will spend and
     leave ``remaining`` unable to reach zero however many times ``debate`` is run --
     which is exactly what this module's docstring promises cannot happen.
 

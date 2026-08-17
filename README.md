@@ -11,9 +11,10 @@ are put in a room together and judge it again, having read each other's reasonin
 **placebo arm** — peers' real arguments about an unrelated day — measures how much of any
 movement is a response to the *argument* rather than to being disagreed with at all.
 
-**85,836 decisions on real prices, zero generation failures, on two consumer GPUs.** The
-adjudication rule for the deciding experiment was committed to git before that experiment
-generated a single row.
+**85,836 decisions on real prices, zero generation failures, on two consumer GPUs** — 52,264
+in the published run and 33,572 in the de-roleing run that tests whether the whole result is
+an artefact of the personas. The adjudication rule for the deciding experiment was committed
+to git before that experiment generated a single row.
 
 ---
 
@@ -39,7 +40,7 @@ Three results carry the paper:
 **1. Unanimous targeted opposition nearly doubles the shift rate.** The contradictor arm
 lands **+23.75pp [+20.12, +27.62]** above the placebo and **+26.88pp [+23.12, +30.63]**
 above genuine debate. 97.6% of movements go *toward* the opposition, and an outright sign
-reversal occurs on 47.1% of every decision the arm touched.
+reversal occurs on 47.1% of all the decisions the arm touched.
 
 **2. The same effect was hiding inside the genuine debate all along.** Counting how many
 opposing peers a debate reader actually faced — 0, 1, 2 or 3 — the shift rate climbs
@@ -91,9 +92,9 @@ generated a row (`3c96a98`). The result then landed outside every branch the rul
 and it is reported under the branch whose condition fired, with the excess stated. Three
 amendments to the declared statistic are quoted verbatim below, with what changed and why.
 
-**A defect register that includes the defects that killed our own headlines.**
-[`docs/CLAIMS.md`](docs/CLAIMS.md) carries **31 numbered claims and 17 registered defects**
-(11 live, six superseded). Among them: the headline mechanism sentence that shipped false
+**A defect register that includes the defects that killed this study's own headlines.**
+[`docs/CLAIMS.md`](docs/CLAIMS.md) carries **31 numbered claims and 20 registered defects**
+(14 live, six superseded). Among them: the headline mechanism sentence that shipped false
 because the inference backend does not enforce numeric schema bounds (D15); a run whose
 model vintage drifted between arms (D16); and the price-fetch module that an unanchored
 `.gitignore` pattern kept out of the repository for the entire study (D17). Every claim is
@@ -254,9 +255,11 @@ Rendering is one code path for all six arms — an arm distinguishable by its fo
 measures nothing.
 
 Every decision here is made once a day, on every session that has a full `lookback_days`
-window behind it — the first `lookback_days - 1` sessions of the price table are warm-up and
-carry no decision: **daily is the only decision frequency this repository implements.**
-There is no resampling step and nothing at any other frequency to compare against.
+window behind it **and** falls on or after the configured `start` — whichever binds later.
+On the published run `start` binds: the price table holds 579 sessions and decisions exist
+on 501, so the warm-up is **78 sessions**, not the 59 that `lookback_days` alone would give.
+**Daily is the only decision frequency this repository implements**; there is no resampling
+step and nothing at any other frequency to compare against.
 
 ### The agents
 
@@ -514,10 +517,14 @@ model tags are re-published under the same name, so a rerun returns neither the 
 the answers this study used. Both were measured rather than assumed:
 
 - **The prices have already moved.** A refetch on 2026-08-18 returned the same 1,158 bars on
-  the same calendar with identical volumes — and **999 of them (86.3%) differ in OHLC**, by
-  up to 0.086% relative. That is back-adjustment re-derived against dividends paid since.
-  The magnitude is far below a decision threshold here, but it is not zero, and it is why
-  the vendor's raw response is pinned beside the parquet.
+  the same calendar with identical volumes — and **every one of AAPL's 579 bars is revised,
+  against none of XOM's**, by up to 0.086%. That is back-adjustment re-derived against
+  dividends paid since. Counted without a threshold the figure is unstable and reproduces at
+  neither run's value: two refetches minutes apart disagree with each other on 73% of bars,
+  by less than a millionth of a percent, because the vendor's adjustment arithmetic carries
+  sub-cent noise. Above that floor the answer is one clean sentence. Measured against the
+  pinned parquet, because this study's own vendor response was not kept — a provenance gap
+  registered as D20, and the reason `council prices` now writes one.
 - **The models have already moved.** Round-0 answers to byte-identical prompts disagree
   across two of this study's own runs on 24.1% of seat-points, six times the within-run
   floor, because the backend updated between them (D16).
@@ -536,7 +543,7 @@ network. Regenerating from scratch is a different experiment, and is expected to
 |---|---|
 | [`docs/findings.md`](docs/findings.md) | every result, with intervals, denominators and the caveats attached to each |
 | [`docs/methods.md`](docs/methods.md) | one page: every component, how it works, and which alternative explanation it kills |
-| [`docs/CLAIMS.md`](docs/CLAIMS.md) | 31 numbered claims and 17 registered defects — what is backed by an artefact and what is not |
+| [`docs/CLAIMS.md`](docs/CLAIMS.md) | 31 numbered claims and 20 registered defects — what is backed by an artefact and what is not |
 | [`docs/research.md`](docs/research.md) | the decisions taken during the build, in the order they were forced |
 
 **The artefacts**, all committed, all recomputed by the test suite:

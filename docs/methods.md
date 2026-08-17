@@ -50,8 +50,10 @@ Two hard-won rules, the second of them learned the expensive way:
 
 Real daily bars, AAPL and XOM, 2022–2023 (drawdown, recovery, flat stretch —
 regimes are not interchangeable, which is why the period was sampled rather than
-shortened). Fetched once via yfinance with `auto_adjust`, vendor response pinned
-byte-for-byte. Agents see **normalised percentage returns only** — no ticker, no
+shortened). Fetched once via yfinance with `auto_adjust`, and the table it built
+is pinned — the vendor's own response was not kept, which is D20 and the reason
+`council prices` now writes one. Agents see **normalised percentage returns
+only** — no ticker, no
 dates, no price levels — because the models were trained on this period and a
 model that recognises the window is remembering, not analysing. This reduces
 recognition; it cannot prove its absence (a distinctive drawdown shape is still
@@ -144,9 +146,9 @@ data window cannot overlap the decision's.
   commit; the extension arms' adjudication rule committed *before* they
   generated a row — and when the result landed outside every branch the rule
   imagined, it was reported under the rule with the excess stated.
-* **CLAIMS.md**: 31 numbered claims, 17 registered defects (11 live entries plus
-  D2–D7 retained for provenance) — including the ones that killed our own
-  headline findings. A claim is either backed by an artefact in the repository
+* **CLAIMS.md**: 31 numbered claims, 20 registered defects (14 live entries plus
+  D2–D7 retained for provenance) — including the ones that killed this study's
+  own headline findings. A claim is either backed by an artefact in the repository
   or it is marked as not.
 * **Doc-contract tests**: `tests/test_docs_findings.py` recomputes the published
   tables and intervals from `docs/results/run-4models-2y/decisions.parquet`; a
