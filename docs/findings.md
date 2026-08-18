@@ -2,6 +2,16 @@
 
 What the run measured, and what it does not license anyone to say.
 
+**If you only read three sections:** the [verdict](#the-verdict-----and-the-number-the-rule-did-not-imagine)
+is where the study's question gets its answer; [section 4](#4-on-questions-with-a-right-answer-none-of-them-capitulates)
+shows the same models refusing to fold on questions of *fact*, which is what makes the
+folding on judgement a finding rather than a temperament; and the
+[de-roleing run](#the-de-roleing-run-----d10-adjudicated) is the strongest objection to the
+whole study, run as an experiment instead of argued with. Sections 1–3 are the original
+four-arm results the verdict later reframed; 5–7 are the supporting measurements. A
+plain-language walk through the design is in the [README](../README.md); the claim-by-claim
+audit trail is [`CLAIMS.md`](CLAIMS.md).
+
 **The run.** One two-year run at daily decision frequency -- the only frequency this
 repository has, and the reason no result below is stated as holding at another. Real
 daily bars for AAPL and XOM, split and dividend adjusted, decisions

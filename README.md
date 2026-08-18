@@ -18,6 +18,36 @@ to git before that experiment generated a single row.
 
 ---
 
+## The experiment, in plain terms
+
+Imagine four analysts who have never met. Each is shown the same two years of price
+history — anonymised, so they cannot recognise the stock or the period — and each states a
+position: a number from −1 (fully short) to +1 (fully long), with a sentence of reasoning.
+
+Then they are put in a committee. Each one reads the other three's reasoning and answers
+again. Sometimes an analyst keeps their position; sometimes they move. The question is
+**why they move** — and the honest answer is that you cannot tell from watching. Being
+persuaded by a good argument, copying a number someone else said, and caving because three
+people disagreed with you all look identical from the outside: the number changed.
+
+So the experiment does what drug trials do. Alongside the real committee it runs a
+**placebo**: the analyst is shown real arguments by real peers — but about a completely
+different day. The arguments are grammatical, confident, professional-sounding, and
+irrelevant. If an analyst moves just as much after reading irrelevant arguments as after
+reading real ones, then the *content* of the arguments was never what moved them — the mere
+experience of being disagreed with was.
+
+That is what happened. And the deciding arm — three peers all arguing *against* the
+analyst, on the analyst's own data — moved them almost twice as much as anything else.
+What predicts whether a model abandons its position is not how good the counter-argument
+is. It is **how many peers are on the other side**.
+
+One measurement below is worth defining once: the **shift rate** is the share of answers
+that moved by at least 0.20 — one fifth of the whole scale — between the opening opinion
+and the first answer after reading peers. Everything else is stated where it is used.
+
+---
+
 ## The finding
 
 **Movement is a response to opposition, not to argument.** The dose of disagreement
